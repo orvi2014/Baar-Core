@@ -25,6 +25,22 @@ def token_counter(text: str, model: str = "gpt-4o") -> int:
         return len(text) // 4
 
 
+import importlib.metadata
+
+def _check_litellm_version():
+    try:
+        version = importlib.metadata.version("litellm")
+    except importlib.metadata.PackageNotFoundError:
+        return
+
+    bad_versions = ["1.82.7", "1.82.8"]
+    if version in bad_versions:
+        raise RuntimeError(
+            f"Insecure LiteLLM version detected: {version}. "
+            "Please downgrade to a safe version."
+        )
+
+
 class BAARRouter:
     """
     Budget-Aware Agentic Router (BAAR).
@@ -42,6 +58,7 @@ class BAARRouter:
         use_llm_router: bool = True,
         system_prompt: Optional[str] = None,
     ):
+        _check_litellm_version()
         if budget <= 0:
             raise ValueError("Budget must be positive")
 

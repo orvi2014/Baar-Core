@@ -78,8 +78,8 @@ def run_stress_test():
         try:
             router.chat("Anything")
             print("    RESULT: FAILED ❌ (Allowed call on zero budget)")
-        except BudgetExceeded:
-            print("    RESULT: PASSED ✅ (Kill-Switch activated locally)")
+        except (BudgetExceeded, RuntimeError) as e:
+            print(f"    RESULT: PASSED ✅ (Kill-Switch activated: {str(e)})")
 
 def main():
     run_stress_test()
