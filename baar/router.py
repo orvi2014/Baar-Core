@@ -78,6 +78,10 @@ class BAARRouter:
     def log(self) -> RoutingLog:
         return self._log
 
+    @property
+    def complexity_threshold(self) -> float:
+        return self._router.complexity_threshold
+
     def chat(self, task: str) -> str:
         """
         Execute a single routed chat call.
