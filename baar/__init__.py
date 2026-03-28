@@ -8,7 +8,7 @@ from baar.core.budget import BudgetExceeded, BudgetTracker
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = [
     "BAARRouter",
     "token_counter",

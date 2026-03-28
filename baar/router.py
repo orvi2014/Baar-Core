@@ -85,15 +85,13 @@ class BAARRouter:
     def chat(self, task: str) -> str:
         """
         Execute a single routed chat call.
-        
-        0. Pre-flight check: Ensure there is some budget left before routing.
-        1. Decide Model: Route to SMALL or BIG based on semantic complexity.
-        2. BCD (Budget-Constrained Decoding): If BIG is chosen but 
-           unaffordable, downgrade to SMALL to preserve budget.
-        3. Execution: Call the chosen model via LiteLLM.
-        4. Audit: Record the real cost and add to the routing log.
         """
-        # 0. Fast Budget Kill-Switch (Zero-Call safety)
+        # 0. Hard Kill-Switch Pre-check
+        min_cost_estimate = 0.0001  # Minimal cost threshold to even attempt routing
+        if self.remaining < min_cost_estimate:
+            raise RuntimeError("Kill-switch activated: budget too low for model call")
+            
+        # 0a. Fast Budget Kill-Switch (Zero-Call safety)
         # Check if we can afford the cheapest model for the given task
         prompt_tokens_small = token_counter(task, model=self.small_model)
         self._tracker.check_affordability(self.small_model, prompt_tokens_small)

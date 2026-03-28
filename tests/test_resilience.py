@@ -15,7 +15,7 @@ def test_zero_budget_blocks_all_calls():
     router._tracker.total_budget = 0.0 # Force zero budget
     
     with patch("litellm.completion") as mock_completion:
-        with pytest.raises(BudgetExceeded):
+        with pytest.raises((BudgetExceeded, RuntimeError)):
             router.chat("This should be blocked before calling the API.")
         
         # PROOF: confirm litellm.completion was NEVER called
