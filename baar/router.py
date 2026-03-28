@@ -61,6 +61,7 @@ class BAARRouter:
         _check_litellm_version()
         # Ensure clean output for users by disabling litellm's internal logging
         litellm.set_verbose = False
+        litellm.suppress_debug_info = True
 
         if budget <= 0:
             raise ValueError("Budget must be positive")
