@@ -59,7 +59,7 @@ To ensure frontier-grade quality, BAAR-Algo is validated on industry-standard da
 | **HumanEval** | ALWAYS-BIG | 100.0% | $0.0105 | - |
 | (Coding) | **BAAR-Algo** | **100.0%** | **$0.0105** | **0.0%*** |
 
-*\*On HumanEval, BAAR correctly detects 100% complexity and uses the Big model, ensuring zero quality loss for critical code.*
+*\*For HumanEval, BAAR correctly identifies 100% complexity and uses the BIG model. This demonstrates our **"Quality Retention"** protocol: BAAR never sacrifices accuracy on tasks that truly require frontier intelligence.*
 
 ### Run the Benchmark Yourself (Free)
 ```bash
