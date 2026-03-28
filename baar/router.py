@@ -59,6 +59,9 @@ class BAARRouter:
         system_prompt: Optional[str] = None,
     ):
         _check_litellm_version()
+        # Ensure clean output for users by disabling litellm's internal logging
+        litellm.set_verbose = False
+
         if budget <= 0:
             raise ValueError("Budget must be positive")
 
@@ -104,23 +107,25 @@ class BAARRouter:
         Execute a single routed chat call.
         """
         # 0. Hard Kill-Switch Pre-check
-        min_cost_estimate = 0.0001  # Minimal cost threshold to even attempt routing
-        if self.remaining < min_cost_estimate:
-            raise RuntimeError("Kill-switch activated: budget too low for model call")
-            
-        # 0a. Fast Budget Kill-Switch (Zero-Call safety)
-        # Check if we can afford the cheapest model for the given task
-        prompt_tokens_small = token_counter(task, model=self.small_model)
-        self._tracker.check_affordability(self.small_model, prompt_tokens_small)
+        # If budget is already near zero, reject instantly before any LLM calls
+        min_cost_threshold = 0.0001
+        if self.remaining < min_cost_threshold:
+            raise RuntimeError("Kill-switch activated: budget exhausted")
 
-        # 1. Routing Decision
+        # 1. Fast Heuristic Pre-check (Zero-Call safety)
+        # Check if we can afford even the cheapest model for this task
+        prompt_tokens_est = token_counter(task, model=self.small_model)
+        self._tracker.check_affordability(self.small_model, prompt_tokens_est)
+
+        # 2. Routing Decision
+        # This might involve an LLM call if use_llm_router=True
         decision = self._router.decide(
             task=task,
             remaining_budget=self.remaining,
             budget_utilization=self._tracker.utilization,
         )
 
-        # 2. Budget Pressure / BCD
+        # 3. Budget Pressure / BCD (Pre-flight cost check)
         # If we chose BIG, check if we can actually afford it.
         if decision.tier == ModelTier.BIG:
             prompt_tokens = token_counter(task, model=self.big_model)
@@ -130,12 +135,12 @@ class BAARRouter:
                 # Downgrade to SMALL if BIG is too expensive
                 decision = self._router.force_small(decision, str(e))
 
-        # Final pre-flight check (ensure we can afford at least the chosen model)
+        # Final pre-flight check (ensure we can afford the chosen model)
         model_to_use = decision.model
         prompt_tokens = token_counter(task, model=model_to_use)
         self._tracker.check_affordability(model_to_use, prompt_tokens)
 
-        # 3. Execution
+        # 4. Execution
         messages = []
         if self.system_prompt:
             messages.append({"role": "system", "content": self.system_prompt})
@@ -151,7 +156,7 @@ class BAARRouter:
         
         latency_ms = (time.perf_counter() - start_time) * 1000
 
-        # 4. Recording & Logging
+        # 5. Recording & Logging
         record = self._tracker.record(response, model=model_to_use)
         
         step_result = StepResult(
