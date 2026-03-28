@@ -59,7 +59,7 @@ To ensure frontier-grade quality, BAAR-Algo is validated on industry-standard da
 | **HumanEval** | ALWAYS-BIG | 100.0% | $0.0105 | - |
 | (Coding) | **BAAR-Algo** | **100.0%** | **$0.0105** | **0.0%*** |
 
-*\*For HumanEval, BAAR correctly identifies 100% complexity and uses the BIG model. This demonstrates our **"Quality Retention"** protocol: BAAR never sacrifices accuracy on tasks that truly require frontier intelligence.*
+*\*On HumanEval, BAAR correctly detects 100% complexity and uses the Big model, ensuring zero quality loss for critical code.*
 
 ### Run the Benchmark Yourself (Free)
 ```bash
@@ -127,8 +127,3 @@ Distributed under the **MIT License**. See [LICENSE](https://github.com/orvi2014
 
 For architectural details and mapping to the **OWASP LLM10** security framework, see [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md).
 
----
-
-<p align="center">
-  Built with ❤️ by [orvi2014](https://github.com/orvi2014).
-</p>
