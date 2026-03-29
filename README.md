@@ -32,6 +32,7 @@ Production LLM agents have a dangerous habit:
 - **Smart semantic routing** — Easy work → cheap model; hard work → capable model.
 - **Budget-constrained downgrade** — If the big model would break the budget, fall back to the small one so the turn can still finish.
 - **True zero-call kill-switch** — Even the cheap model unaffordable? **Fail fast** — no completion call, no surprise line item.
+- **Offline Safety** — If your budget is $0, `baar-core` won't even attempt a DNS lookup for the LLM provider. It fails instantly in your local environment.
 
 No surprise invoices. Stronger stance against runaway and adversarial “denial of wallet” patterns. Quality where it matters (reasoning, coding, agents) because hard tasks still reach the capable tier when the budget allows.
 
