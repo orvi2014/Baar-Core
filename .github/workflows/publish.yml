@@ -1,15 +1,18 @@
 name: Publish to PyPI
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build-n-publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
     steps:
+    - name: Deprecated workflow notice
+      run: |
+        echo "This workflow is deprecated."
+        echo "Publishing now happens in .github/workflows/release.yml after a new tag is created."
+        echo "Use Release workflow by merging a version bump to main."
     - uses: actions/checkout@v4
     - name: Set up Python
       uses: actions/setup-python@v5
