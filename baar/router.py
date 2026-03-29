@@ -131,18 +131,29 @@ class BAARRouter:
 
     def chat(self, task: str) -> str:
         """
-        Execute a single routed chat call.
+        Execute a single routed chat call with hard financial guardrails.
         """
         # 0. Hard Kill-Switch Pre-check
         # If budget is already near zero, reject instantly before any LLM calls
         min_cost_threshold = 0.0001
         if self.remaining < min_cost_threshold:
-            raise RuntimeError("Kill-switch activated: budget exhausted")
+            raise RuntimeError(
+                "Kill-switch activated: "
+                f"budget too low (${self.remaining:.6f}). "
+                "Request rejected locally with zero network calls."
+            )
 
         # 1. Fast Heuristic Pre-check (Zero-Call safety)
         # Check if we can afford even the cheapest model for this task
-        prompt_tokens_est = token_counter(task, model=self.small_model)
-        self._tracker.check_affordability(self.small_model, prompt_tokens_est)
+        try:
+            prompt_tokens_est = token_counter(task, model=self.small_model)
+            self._tracker.check_affordability(self.small_model, prompt_tokens_est)
+        except BudgetExceeded as e:
+            raise RuntimeError(
+                "Kill-switch activated: "
+                f"budget too low (${self.remaining:.6f}) for the cheapest safe call "
+                f"on {self.small_model}. Request rejected locally with zero network calls."
+            ) from e
 
         # 2. Routing Decision
         # This might involve an LLM call if use_llm_router=True

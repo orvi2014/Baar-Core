@@ -3,7 +3,7 @@ tests/test_resilience.py — The "Zero-Call" Proof.
 Ensures that zero network calls are made if the budget is insufficient.
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from baar import BAARRouter, BudgetExceeded
 
 def test_zero_budget_blocks_all_calls():
@@ -52,8 +52,50 @@ def test_extreme_token_inflation_blocks_preflight():
     huge_task = "A " * 500000 
     
     with patch("litellm.completion") as mock_completion:
-        with pytest.raises(BudgetExceeded):
+        with pytest.raises((BudgetExceeded, RuntimeError)):
             router.chat(huge_task)
             
         # PROOF: The cost prediction (BCD) stopped it before the API call
+        mock_completion.assert_not_called()
+
+
+def test_killswitch_below_threshold_has_clear_local_rejection_message():
+    """If remaining budget is below threshold, fail locally with clear details."""
+    router = BAARRouter(budget=1.0)
+    router._tracker._spent = 0.99995  # remaining = 0.00005 (< 0.0001)
+
+    with patch("litellm.completion") as mock_completion:
+        with pytest.raises(RuntimeError) as exc:
+            router.chat("hello")
+
+        msg = str(exc.value)
+        assert "Kill-switch activated" in msg
+        assert "$0.000050" in msg
+        assert "zero network calls" in msg
+        mock_completion.assert_not_called()
+
+
+def test_affordability_failure_at_threshold_is_wrapped_as_local_rejection():
+    """At the exact threshold, cheapest-call affordability failure is wrapped clearly."""
+    router = BAARRouter(budget=1.0)
+    router._tracker._spent = 0.999899  # remaining ~= 0.000101 (just above threshold)
+
+    with patch("litellm.completion") as mock_completion, \
+         patch("baar.router.token_counter", return_value=50), \
+         patch.object(
+             router._tracker,
+             "check_affordability",
+             side_effect=BudgetExceeded(
+                 requested=0.001,
+                 remaining=router.remaining,
+                 model=router.small_model,
+             ),
+         ):
+        with pytest.raises(RuntimeError) as exc:
+            router.chat("hello")
+
+        msg = str(exc.value)
+        assert "cheapest safe call" in msg
+        assert router.small_model in msg
+        assert "zero network calls" in msg
         mock_completion.assert_not_called()
