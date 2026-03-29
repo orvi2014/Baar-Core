@@ -58,24 +58,60 @@ graph TD
 
 ---
 
-## Benchmarks (hard subset, mock mode)
+## Benchmarks
 
-Difficult prompts only; **20 prompts per dataset**, `baar-bench --dataset all --mock --limit 20`. On this slice Baar-Core tracks **always-big** on quality and cost.
+### Mock benchmark (deterministic, calibrated policy)
 
-| Dataset | Strategy | Accuracy | Approx. cost | vs always-big |
-| :--- | :--- | :---: | :---: | :---: |
-| **MMLU** | Always big | 100% | ~$0.19 | — |
-| **MMLU** | **Baar-Core** | **100%** | **~$0.19** | **~0%** |
-| **GSM8K** | Always big | 100% | ~$0.19 | — |
-| **GSM8K** | **Baar-Core** | **100%** | **~$0.19** | **~0%** |
-| **HumanEval** | Always big | 100% | ~$0.19 | — |
-| **HumanEval** | **Baar-Core** | **100%** | **~$0.19** | **~0%** |
-
-**Real-world savings** show up on mixed traffic — chat, extraction, formatting — where many turns stay on the cheap model.
+Command:
 
 ```bash
-baar-bench --dataset all --mock
+baar-bench \
+  --dataset all \
+  --limit 200 \
+  --budget 10 \
+  --mock \
+  --value-policy simple \
+  --auto-calibrate-alpha \
+  --target-reject-rate 0.05 \
+  --alpha-source percentile \
+  --max-reject-rate 0.5 \
+  --small-exploration-rate 0.1 \
+  --seed 42
 ```
+
+| Dataset | Strategy | Accuracy | Total cost | vs always-big |
+| :--- | :--- | :---: | :---: | :---: |
+| **MMLU** | Always big | 100.0% | $1.990500 | — |
+| **MMLU** | **Baar-Core** | **91.5%** | **$1.625000** | **60.9% cheaper** |
+| **GSM8K** | Always big | 100.0% | $1.990500 | — |
+| **GSM8K** | **Baar-Core** | **90.0%** | **$1.478000** | **60.4% cheaper** |
+| **HumanEval** | Always big | 100.0% | $1.630500 | — |
+| **HumanEval** | **Baar-Core** | **92.7%** | **$1.369500** | **48.1% cheaper** |
+
+### Live benchmark (small subset sanity check)
+
+Command:
+
+```bash
+baar-bench \
+  --dataset all \
+  --limit 10 \
+  --budget 2 \
+  --value-policy none \
+  --small-exploration-rate 0.0 \
+  --seed 42
+```
+
+| Dataset | Strategy | Accuracy | Total cost | vs always-big |
+| :--- | :--- | :---: | :---: | :---: |
+| **MMLU** | Always big | 50.0% | $0.002337 | — |
+| **MMLU** | **Baar-Core** | **60.0%** | **$0.000137** | **93.3% cheaper** |
+| **GSM8K** | Always big | 60.0% | $0.027615 | — |
+| **GSM8K** | **Baar-Core** | **20.0%** | **$0.002097** | **93.3% cheaper** |
+| **HumanEval** | Always big | 0.0% | $0.032125 | — |
+| **HumanEval** | **Baar-Core** | **0.0%** | **$0.002743** | **93.3% cheaper** |
+
+Live results can vary significantly by provider/model quality, API reliability, and prompt behavior. Use live runs as environment-specific checks, and use mock runs for reproducible routing/cost trade-off iteration.
 
 ---
 
