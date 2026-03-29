@@ -448,6 +448,75 @@ class TestFailoverAndTelemetry:
         assert step.attempted_models == ["gpt-4o-mini", "fallback-small"]
         assert len(step.failover_errors) >= 1
 
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_big_model_failover_succeeds_on_second_candidate(self, mock_tc, mock_cpt, mock_cc):
+        def completion_side_effect(model, messages, **kwargs):
+            if model == "gpt-4o":
+                raise RuntimeError("primary big down")
+            return mock_litellm_response(content=f"from {model}", model=model)
+
+        with patch("baar.router.litellm.completion", side_effect=completion_side_effect):
+            router = BAARRouter(
+                budget=0.10,
+                use_llm_router=False,
+                complexity_threshold=0.0,  # initial decision -> BIG
+                small_model="gpt-4o-mini",
+                big_model="gpt-4o",
+                big_fallback_models=["fallback-big"],
+            )
+            out = router.chat("Analyze system design trade-offs")
+
+        assert "fallback-big" in out
+        step = router.log.steps[-1]
+        assert step.decision.model == "fallback-big"
+        assert step.failover_count == 1
+        assert step.attempted_models == ["gpt-4o", "fallback-big"]
+
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.router.token_counter", return_value=50)
+    def test_failover_skips_unaffordable_candidate_then_succeeds(self, mock_tc, mock_cc):
+        def cost_side_effect(model, prompt_tokens, completion_tokens):
+            if model == "fallback-small-1":
+                return (0.2, 0.2)  # clearly unaffordable for a $0.10 budget
+            return (0.000001, 0.000002)
+
+        def completion_side_effect(model, messages, **kwargs):
+            if model == "gpt-4o-mini":
+                raise RuntimeError("primary small down")
+            return mock_litellm_response("ok", model=model)
+
+        with patch("baar.core.budget.cost_per_token", side_effect=cost_side_effect):
+            with patch("baar.router.litellm.completion", side_effect=completion_side_effect):
+                router = BAARRouter(
+                    budget=0.10,
+                    use_llm_router=False,
+                    small_model="gpt-4o-mini",
+                    small_fallback_models=["fallback-small-1", "fallback-small-2"],
+                )
+                router.chat("hello")
+
+        step = router.log.steps[-1]
+        assert step.decision.model == "fallback-small-2"
+        assert step.attempted_models == ["gpt-4o-mini", "fallback-small-1", "fallback-small-2"]
+        assert step.failover_count == 2
+        assert any("affordability failed" in e for e in step.failover_errors)
+
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_all_failover_candidates_fail_raises(self, mock_tc, mock_cpt, mock_cc):
+        with patch("baar.router.litellm.completion", side_effect=RuntimeError("outage")):
+            router = BAARRouter(
+                budget=0.10,
+                use_llm_router=False,
+                small_model="gpt-4o-mini",
+                small_fallback_models=["fallback-small-1"],
+            )
+            with pytest.raises(RuntimeError, match="All provider/model attempts failed"):
+                router.chat("hello")
+
     @patch("baar.router.litellm.completion")
     @patch("baar.core.budget.completion_cost", return_value=0.000025)
     @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
