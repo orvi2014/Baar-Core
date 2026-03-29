@@ -82,6 +82,7 @@ def test_affordability_failure_at_threshold_is_wrapped_as_local_rejection():
 
     with patch("litellm.completion") as mock_completion, \
          patch("baar.router.token_counter", return_value=50), \
+         patch.object(router._tracker, "estimate_cost", return_value=0.0), \
          patch.object(
              router._tracker,
              "check_affordability",
@@ -98,4 +99,39 @@ def test_affordability_failure_at_threshold_is_wrapped_as_local_rejection():
         assert "cheapest safe call" in msg
         assert router.small_model in msg
         assert "zero network calls" in msg
+        mock_completion.assert_not_called()
+
+
+def test_configurable_threshold_blocks_locally_even_when_default_would_not():
+    """A higher configured floor should hard-stop locally before routing."""
+    router = BAARRouter(budget=0.001, min_cost_threshold=0.001)
+    router._tracker._spent = 0.0005  # remaining = 0.0005 (above old default, below configured floor)
+
+    with patch("litellm.completion") as mock_completion:
+        with pytest.raises(RuntimeError) as exc:
+            router.chat("hello")
+
+        msg = str(exc.value)
+        assert "configured floor $0.001000" in msg
+        assert "zero network calls" in msg
+        mock_completion.assert_not_called()
+
+
+def test_dynamic_floor_guard_blocks_when_estimated_small_cost_is_higher():
+    """Future guard: dynamic floor uses estimated cheapest-call cost when higher than config."""
+    router = BAARRouter(budget=1.0, min_cost_threshold=0.0)
+    router._tracker._spent = 0.9998  # remaining = 0.0002
+
+    with patch("litellm.completion") as mock_completion, \
+         patch("baar.router.token_counter", return_value=100), \
+         patch.object(router._tracker, "estimate_cost", return_value=0.0003), \
+         patch.object(router._tracker, "check_affordability") as mock_affordability:
+        with pytest.raises(RuntimeError) as exc:
+            router.chat("hello")
+
+        msg = str(exc.value)
+        assert "Effective preflight floor is $0.000300" in msg
+        assert "configured floor $0.000000" in msg
+        # This path should fail before affordability check is reached.
+        mock_affordability.assert_not_called()
         mock_completion.assert_not_called()

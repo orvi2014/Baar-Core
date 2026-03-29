@@ -71,6 +71,7 @@ class BAARRouter:
         routing_cache_size: int = 256,
         routing_cache_enabled: bool = True,
         small_exploration_rate: float = 0.0,
+        min_cost_threshold: float = 0.0001,
     ):
         _check_litellm_version()
         # Ensure clean output for users by disabling litellm's internal logging
@@ -79,10 +80,13 @@ class BAARRouter:
 
         if budget <= 0:
             raise ValueError("Budget must be positive")
+        if min_cost_threshold < 0:
+            raise ValueError("min_cost_threshold must be non-negative")
 
         self.small_model = small_model
         self.big_model = big_model
         self.system_prompt = system_prompt
+        self._min_cost_threshold = float(min_cost_threshold)
 
         self._tracker = BudgetTracker(total_budget=budget)
         self._router = Router(
@@ -129,24 +133,32 @@ class BAARRouter:
     def complexity_threshold(self) -> float:
         return self._router.complexity_threshold
 
+    @property
+    def min_cost_threshold(self) -> float:
+        return self._min_cost_threshold
+
     def chat(self, task: str) -> str:
         """
         Execute a single routed chat call with hard financial guardrails.
         """
+        prompt_tokens_est = token_counter(task, model=self.small_model)
+        estimated_small_floor = self._tracker.estimate_cost(self.small_model, prompt_tokens_est)
+        effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
+
         # 0. Hard Kill-Switch Pre-check
         # If budget is already near zero, reject instantly before any LLM calls
-        min_cost_threshold = 0.0001
-        if self.remaining < min_cost_threshold:
+        if self.remaining < effective_min_cost_threshold:
             raise RuntimeError(
                 "Kill-switch activated: "
                 f"budget too low (${self.remaining:.6f}). "
+                f"Effective preflight floor is ${effective_min_cost_threshold:.6f} "
+                f"(configured floor ${self._min_cost_threshold:.6f}). "
                 "Request rejected locally with zero network calls."
             )
 
         # 1. Fast Heuristic Pre-check (Zero-Call safety)
         # Check if we can afford even the cheapest model for this task
         try:
-            prompt_tokens_est = token_counter(task, model=self.small_model)
             self._tracker.check_affordability(self.small_model, prompt_tokens_est)
         except BudgetExceeded as e:
             raise RuntimeError(

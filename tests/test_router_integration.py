@@ -71,6 +71,14 @@ class TestBAARRouterInit:
         router = BAARRouter(budget=0.25)
         assert router.remaining == pytest.approx(0.25)
 
+    def test_custom_min_cost_threshold_initialization(self):
+        router = BAARRouter(budget=0.10, min_cost_threshold=0.001)
+        assert router.min_cost_threshold == pytest.approx(0.001)
+
+    def test_negative_min_cost_threshold_raises(self):
+        with pytest.raises(ValueError, match="min_cost_threshold must be non-negative"):
+            BAARRouter(budget=0.10, min_cost_threshold=-0.001)
+
 
 # ─────────────────────────────────────────────────────────
 # Single chat call
