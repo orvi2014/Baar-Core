@@ -110,6 +110,18 @@ Adversarial-style checks (complexity games, tight budget). Baar-Core is designed
 
 ---
 
+## Telemetry Summary CLI
+
+If you enable `telemetry_jsonl_path` on `BAARRouter`, summarize logs with:
+
+```bash
+baar-telemetry path/to/telemetry.jsonl
+```
+
+This prints reject rate, failover rate, total spend, and per-model spend distribution.
+
+---
+
 ## Configuration
 
 Default **`complexity_threshold=0.80`** routes more traffic to the cheap model than `0.65` did; the effective threshold also **rises with budget utilization** so BIG is harder to justify as spend accumulates. Tighten or loosen with `complexity_threshold` if your workload skews very easy or very hard.
