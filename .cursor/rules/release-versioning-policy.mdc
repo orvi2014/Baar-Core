@@ -1,0 +1,11 @@
+---
+description: Use patch bumps for routine releases
+alwaysApply: true
+---
+
+# Release Versioning Policy
+
+- For bug fixes, test-only changes, docs updates, CI/workflow tweaks, and non-breaking refactors, bump PATCH only (for example `0.2.2` -> `0.2.3`).
+- Do not bump MINOR unless the user explicitly asks for a minor release.
+- When bumping version, update both version sources: `pyproject.toml` (`project.version`) and `baar/__init__.py` (`__version__`).
+- Do not pre-create release tags manually for version automation; let `.github/workflows/release.yml` create tag/release from `main` after merge.
