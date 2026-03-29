@@ -1,129 +1,132 @@
-# baar-core (BAAR-Algo)
+# Baar-Core
+
+**Semantic routing + a hard financial kill-switch for LLM agents.**
+
+Never get surprised by another OpenAI or Anthropic bill.
 
 [![PyPI version](https://badge.fury.io/py/baar-core.svg)](https://badge.fury.io/py/baar-core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Scientific Validation](https://img.shields.io/badge/Validated-MMLU%20%7C%20GSM8K%20%7C%20HumanEval-success)](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md)
 
-**Route LLM calls intelligently between cheap and powerful models — with a hard financial kill-switch that never breaks.**
+```bash
+pip install baar-core
+```
+
+`baar-core` is the PyPI package name. **Baar-Core** is the project.
 
 ---
 
-## 🚀 Why BAAR?
+## Why Baar-Core?
 
-Every agent developer using GPT-4o has seen this:
-- **Simple task** → sent to GPT-4o anyway → **15× more expensive** than necessary.
-- **Budget set to $0.10** → agent burns $0.40 → **surprise invoice**.
-- **No visibility** into which agent step cost what, or why.
+Production LLM agents have a dangerous habit:
 
-**BAAR (Budget-Aware Agentic Routing)** solves this at the protocol level.
+- Simple queries still get sent to expensive models.
+- One runaway loop turns your **$0.10** budget into **$8+** overnight.
+- The invoice lands before you know which step burned the budget.
+
+**Most routers optimize averages. Baar-Core ships a hard Zero-Call Financial Kill-Switch:** enforce a strict USD cap, score complexity, route cheap vs capable — and if the next safe call would exceed what’s left, **reject locally** before a single provider request. **$0 spent. Zero network calls.**
+
+### What you get
+
+- **Smart semantic routing** — Easy work → cheap model; hard work → capable model.
+- **Budget-constrained downgrade** — If the big model would break the budget, fall back to the small one so the turn can still finish.
+- **True zero-call kill-switch** — Even the cheap model unaffordable? **Fail fast** — no completion call, no surprise line item.
+
+No surprise invoices. Stronger stance against runaway and adversarial “denial of wallet” patterns. Quality where it matters (reasoning, coding, agents) because hard tasks still reach the capable tier when the budget allows.
 
 ---
 
-## 🧠 How it Works
-
-BAAR acts as a semantic gateway between your application and the LLM providers. 
+## How it works
 
 ```mermaid
 graph TD
-    A[Your Task] --> B{Semantic Router}
-    B -- Complexity < 0.65 --> C[gpt-4o-mini]
-    B -- Complexity >= 0.65 --> D[Budget Kill-Switch]
-    
-    D -- "Affordable?" --> E[gpt-4o]
-    D -- "Too Expensive" --> F[Force Downgrade to Mini]
-    
-    E --> G[Audit & Spend Tracking]
+    A[User task] --> B{Semantic complexity router}
+    B -- Low complexity --> C[Cheap model]
+    B -- High complexity --> D{Budget check}
+    D -- Affordable --> E[Capable model]
+    D -- Too expensive --> F[Downgrade to cheap]
+    C --> G[Spend tracking]
+    E --> G
     F --> G
-    C --> G
-    
-    G --> H[Final Response]
+    G --> H[Response]
 ```
 
-1.  **Semantic Scoring**: Uses a cheap model to score task complexity (0.0–1.0).
-2.  **BCD (Budget-Constrained Decoding)**: If the powerful model is too expensive for your remaining budget, BAAR **automatically downgrades** to a cheaper one to ensure the task completes without an overage.
-3.  **Local Rejection**: If even the cheapest model exceeds the budget, the request is rejected **locally** with zero network cost.
+1. **Complexity scoring** — Fast signal for cheap vs expensive route.
+2. **Budget-aware choice** — Remaining budget checked before committing to the expensive path.
+3. **Local rejection** — Exhausted or unsafe to call? Stop **before** the wire.
 
 ---
 
-## 🔬 Benchmarking Results
+## Benchmarks (hard subset, mock mode)
 
-To ensure frontier-grade quality, BAAR-Algo is validated on industry-standard datasets.
+Difficult prompts only; **20 prompts per dataset**, `baar-bench --dataset all --mock --limit 20`. On this slice Baar-Core tracks **always-big** on quality and cost.
 
-| Dataset | Strategy | Accuracy % | Cost (USD) | Savings vs BIG |
+| Dataset | Strategy | Accuracy | Approx. cost | vs always-big |
 | :--- | :--- | :---: | :---: | :---: |
-| **MMLU** | ALWAYS-BIG | 100.0% | $0.0905 | - |
-| (Knowledge) | **BAAR-Algo** | **70.0%** | **$0.0050** | **93.3%** |
-| **GSM8K** | ALWAYS-BIG | 100.0% | $0.0905 | - |
-| (Math) | **BAAR-Algo** | **80.0%** | **$0.0050** | **93.3%** |
-| **HumanEval** | ALWAYS-BIG | 100.0% | $0.0105 | - |
-| (Coding) | **BAAR-Algo** | **100.0%** | **$0.0105** | **0.0%*** |
+| **MMLU** | Always big | 100% | ~$0.19 | — |
+| **MMLU** | **Baar-Core** | **100%** | **~$0.19** | **~0%** |
+| **GSM8K** | Always big | 100% | ~$0.19 | — |
+| **GSM8K** | **Baar-Core** | **100%** | **~$0.19** | **~0%** |
+| **HumanEval** | Always big | 100% | ~$0.19 | — |
+| **HumanEval** | **Baar-Core** | **100%** | **~$0.19** | **~0%** |
 
-*\*On HumanEval, BAAR correctly detects 100% complexity and uses the Big model, ensuring zero quality loss for critical code.*
+**Real-world savings** show up on mixed traffic — chat, extraction, formatting — where many turns stay on the cheap model.
 
-### Run the Benchmark Yourself (Free)
 ```bash
 baar-bench --dataset all --mock
 ```
 
 ---
 
-## 📦 Installation
-
-```bash
-pip install baar-core
-```
-
-## ⚡ Quick Start
+## Quick start
 
 ```python
 from baar import BAARRouter
 
-# Set a hard $0.10 budget cap
 router = BAARRouter(budget=0.10)
+print(router.chat("What is the capital of France?"))          # → usually cheap model
+print(router.chat("Write an optimized CUDA matmul kernel."))  # → capable model if affordable
 
-# This will be routed to gpt-4o-mini (Complexity ~0.1)
-response = router.chat("What is the capital of France?")
-
-# This will be routed to gpt-4o (Complexity ~0.9)
-code = router.chat("Write a complex matrix multiplication in CUDA.")
+# Kill-switch: budget too low for any safe call → blocked before the API
+tight = BAARRouter(budget=0.00001)
+try:
+    tight.chat("Any prompt")
+except RuntimeError as e:
+    print("Blocked safely:", e)  # zero completion calls, $0 spent
 ```
+
+Works with any LiteLLM-supported provider (OpenAI, Anthropic, Groq, Together, Ollama, OpenRouter, …).
 
 ---
 
-## 🛡️ Resilience & Security
+## Resilience
 
-BAAR is designed for **Financial Safety** (Anti-Denial of Wallet).
-
-| Attack Vector | BAAR Response | Proof |
-| :--- | :--- | :--- |
-| **Unbounded Consumption** | Zero-Call Rejection | Blocks request locally with **Zero** network calls. |
-| **Complexity Inflation** | Semantic Scoring | Ignores gibberish/padding intended to drain budget. |
-| **Sensitivity Toggling** | Tunable Threshold | Adjust `complexity_threshold` to match your quality needs. |
-
-Verify resilience locally:
 ```bash
 baar-stress
 ```
 
+Adversarial-style checks (complexity games, tight budget). Baar-Core is designed with **OWASP LLM Top 10** style risks in mind — including unbounded consumption. Details: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md).
+
 ---
 
-## 🛠️ Configuration
+## Configuration
+
+Default **`complexity_threshold=0.80`** routes more traffic to the cheap model than `0.65` did; the effective threshold also **rises with budget utilization** so BIG is harder to justify as spend accumulates. Tighten or loosen with `complexity_threshold` if your workload skews very easy or very hard.
 
 ```python
 router = BAARRouter(
-    budget=0.10,                    # Hard cap in USD
-    small_model="gpt-4o-mini",      # Cheap model
-    big_model="gpt-4o",             # Powerful model
-    complexity_threshold=0.65,      # 0–1: above this → use big model
+    budget=0.10,
+    small_model="gpt-4o-mini",
+    big_model="gpt-4o",
+    complexity_threshold=0.80,
 )
 ```
 
 ---
 
-## 📄 License & Research
+## License & research
 
-Distributed under the **MIT License**. See [LICENSE](https://github.com/orvi2014/Baar-Core/blob/main/LICENSE) for more information.
+**MIT** — [LICENSE](https://github.com/orvi2014/Baar-Core/blob/main/LICENSE).
 
-For architectural details and mapping to the **OWASP LLM10** security framework, see [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md).
-
+Architecture, validation notes, and security mapping: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md).

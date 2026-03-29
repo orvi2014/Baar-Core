@@ -8,13 +8,114 @@ import sys
 import argparse
 import time
 import json
+import zlib
+import random
+import statistics
 from unittest.mock import patch, MagicMock
 
 # Core imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from baar import BAARRouter, ModelTier
+from baar.router import token_counter
 from benchmarks.data_loader import get_mmlu_subset, get_gsm8k_subset, get_humaneval_subset, StandardTask
 from benchmarks.evaluators import evaluate_mmlu, evaluate_gsm8k, evaluate_code
+
+
+def build_value_fn(policy: str):
+    """
+    Returns a lightweight value estimator in USD units for BAAR value gating.
+    Higher return value = higher task value.
+    """
+    if policy == "none":
+        return None
+
+    def value_fn(task: str) -> float:
+        text = task.lower()
+        # Keep value in USD-like range to compare against estimate_cost().
+        # Baseline targets: SMALL≈0.0005, BIG≈0.01 in mock mode.
+        value = 0.0035
+        if any(k in text for k in ["fix", "debug", "traceback", "error handling"]):
+            value = 0.0120
+        elif any(k in text for k in ["write code", "implement", "def ", "class ", "function"]):
+            value = 0.0100
+        elif any(k in text for k in ["explain", "analyze", "compare", "trade-off", "architecture"]):
+            value = 0.0070
+        elif len(task) < 20:
+            value = 0.0020
+
+        if policy == "strict":
+            value *= 0.85
+
+        return max(0.0, value)
+
+    return value_fn
+
+
+def _percentile(values: list[float], p: float) -> float:
+    """Simple percentile helper without numpy dependency."""
+    if not values:
+        return 0.0
+    if p <= 0:
+        return min(values)
+    if p >= 100:
+        return max(values)
+    ordered = sorted(values)
+    idx = (len(ordered) - 1) * (p / 100.0)
+    lo = int(idx)
+    hi = min(lo + 1, len(ordered) - 1)
+    frac = idx - lo
+    return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
+
+
+def derive_alpha_from_data(
+    tasks: list[StandardTask],
+    budget: float,
+    value_fn,
+    reject_rate_target: float,
+    source: str,
+    sample_size: int,
+    small_exploration_rate: float,
+) -> tuple[float, list[dict], list[float]]:
+    """
+    Calibration pass: estimate value/cost ratio distribution without executing completions.
+    Returns derived alpha plus detailed records and ratios.
+    """
+    calib_router = BAARRouter(
+        budget=budget,
+        value_fn=value_fn,
+        small_exploration_rate=small_exploration_rate,
+    )
+
+    sample = tasks[: max(1, min(sample_size, len(tasks)))]
+    records: list[dict] = []
+    ratios: list[float] = []
+    for t in sample:
+        decision = calib_router._router.decide(
+            task=t.task,
+            remaining_budget=calib_router.remaining,
+            budget_utilization=calib_router._tracker.utilization,
+        )
+        model = decision.model
+        prompt_tokens = token_counter(t.task, model=model)
+        est_cost = calib_router._tracker.estimate_cost(model, prompt_tokens)
+        value = float(value_fn(t.task))
+        ratio = value / max(est_cost, 1e-12)
+        records.append(
+            {
+                "id": t.id,
+                "value": value,
+                "cost": est_cost,
+                "ratio": ratio,
+                "tier": decision.tier.value,
+            }
+        )
+        ratios.append(ratio)
+
+    if source == "median":
+        alpha = statistics.median(ratios) * 0.5
+    else:
+        alpha = _percentile(ratios, reject_rate_target * 100.0)
+    return max(0.0, alpha), records, ratios
 
 def main():
     parser = argparse.ArgumentParser(description="BAAR-Algo Scientific Evaluation")
@@ -22,7 +123,75 @@ def main():
     parser.add_argument("--limit", type=int, default=20, help="Tasks per dataset (max 100 for MMLU/GSM8K)")
     parser.add_argument("--mock", action="store_true", help="Run with mocks (free)")
     parser.add_argument("--budget", type=float, default=1.0, help="Initial budget for the run")
+    parser.add_argument(
+        "--value-policy",
+        type=str,
+        choices=["none", "simple", "strict"],
+        default="none",
+        help="Enable BAAR value gate with a built-in value_fn policy.",
+    )
+    parser.add_argument(
+        "--value-reject-alpha",
+        type=float,
+        default=0.3,
+        help="Reject only when estimated_value < estimated_cost * alpha.",
+    )
+    parser.add_argument(
+        "--max-reject-rate",
+        type=float,
+        default=0.5,
+        help="Safety clamp for value-gate rejects in BAAR runs.",
+    )
+    parser.add_argument(
+        "--auto-calibrate-alpha",
+        action="store_true",
+        help="Derive value_reject_alpha from observed value/cost ratios before BAAR run.",
+    )
+    parser.add_argument(
+        "--target-reject-rate",
+        type=float,
+        default=0.2,
+        help="Target reject fraction used when auto-calibrating alpha percentile.",
+    )
+    parser.add_argument(
+        "--alpha-source",
+        type=str,
+        choices=["percentile", "median"],
+        default="percentile",
+        help="Alpha derivation rule: percentile(target_reject_rate) or median(ratio)*0.5.",
+    )
+    parser.add_argument(
+        "--calibration-sample",
+        type=int,
+        default=120,
+        help="Number of tasks per dataset used for alpha calibration pass.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible exploration behavior.",
+    )
+    parser.add_argument(
+        "--small-exploration-rate",
+        type=float,
+        default=0.0,
+        help="Probability of downshifting BIG->SMALL during routing exploration (0.0-1.0).",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Per-task progress (live) and BAAR routing mix (small vs big) after each baar run",
+    )
     args = parser.parse_args()
+    random.seed(args.seed)
+    print(
+        f"⚙️ Config: mock={args.mock}, value_policy={args.value_policy}, "
+        f"value_reject_alpha={args.value_reject_alpha}, max_reject_rate={args.max_reject_rate}, "
+        f"auto_calibrate_alpha={args.auto_calibrate_alpha}, alpha_source={args.alpha_source}, "
+        f"target_reject_rate={args.target_reject_rate}, calibration_sample={args.calibration_sample}, "
+        f"small_exploration_rate={args.small_exploration_rate}, seed={args.seed}"
+    )
 
     datasets = ["mmlu", "gsm8k", "humaneval"] if args.dataset == "all" else [args.dataset]
     
@@ -52,38 +221,79 @@ def main():
 
         for strat in strategies:
             print(f"  → Running strategy: {strat.upper()}...")
-            router = BAARRouter(budget=args.budget)
+            value_fn = None
+            alpha_for_run = args.value_reject_alpha
+            if strat == "baar":
+                value_fn = build_value_fn(args.value_policy)
+                if args.auto_calibrate_alpha and value_fn is not None:
+                    alpha_for_run, calib_records, ratios = derive_alpha_from_data(
+                        tasks=tasks,
+                        budget=args.budget,
+                        value_fn=value_fn,
+                        reject_rate_target=max(0.0, min(1.0, args.target_reject_rate)),
+                        source=args.alpha_source,
+                        sample_size=args.calibration_sample,
+                        small_exploration_rate=args.small_exploration_rate,
+                    )
+                    p10 = _percentile(ratios, 10)
+                    p50 = _percentile(ratios, 50)
+                    p90 = _percentile(ratios, 90)
+                    estimated_reject = (
+                        sum(1 for r in ratios if r < alpha_for_run) / max(1, len(ratios))
+                    )
+                    print(
+                        "      Alpha calibration:"
+                        f" n={len(calib_records)} ratio_p10={p10:.3f}"
+                        f" ratio_p50={p50:.3f} ratio_p90={p90:.3f}"
+                        f" -> alpha={alpha_for_run:.3f}"
+                        f" (est_reject={estimated_reject*100:.1f}%)",
+                        flush=True,
+                    )
+            router = BAARRouter(
+                budget=args.budget,
+                value_fn=value_fn,
+                value_reject_alpha=alpha_for_run,
+                max_reject_rate=args.max_reject_rate,
+                small_exploration_rate=args.small_exploration_rate if strat == "baar" else 0.0,
+            )
             
             # Setup strategy forcing (same as in engine.py)
             if strat != "baar":
                 original_decide = router._router.decide
                 if strat == "always-big":
                     router._router.decide = lambda *args, **kwargs: MagicMock(
-                        tier=ModelTier.BIG, model=router.big_model, 
-                        confidence=1.0, complexity_score=1.0, reason="forced-big", forced_by_budget=False
+                        tier=ModelTier.BIG,
+                        model=router.big_model,
+                        confidence=1.0,
+                        complexity_score=1.0,
+                        reason="forced-big",
+                        forced_by_budget=False,
+                        routing_cache_hit=False,
                     )
                 else:
                     router._router.decide = lambda *args, **kwargs: MagicMock(
-                        tier=ModelTier.SMALL, model=router.small_model, 
-                        confidence=1.0, complexity_score=0.1, reason="forced-small", forced_by_budget=False
+                        tier=ModelTier.SMALL,
+                        model=router.small_model,
+                        confidence=1.0,
+                        complexity_score=0.1,
+                        reason="forced-small",
+                        forced_by_budget=False,
+                        routing_cache_hit=False,
                     )
 
-            # Mocking logic
-            with patch("litellm.completion") as mock_comp, \
-                 patch("baar.core.budget.completion_cost") as mock_cost:
-                
-                if args.mock:
-                    # In mock mode, BIG is 100% right, SMALL is 50% right for logic, etc.
-                    # We'll simulate this by setting the response based on ground_truth.
+            correct = 0
+            if args.mock:
+                with patch("litellm.completion") as mock_comp, \
+                     patch("baar.core.budget.completion_cost") as mock_cost:
                     def mock_side_effect(model, messages, **kwargs):
                         task_content = messages[-1]["content"]
                         # We need to find the task to get ground_truth
-                        # This is a bit slow in O(N^2) but fine for N=100
+                        # This is a bit slow in O(N^2) but fine for benchmark subset sizes
                         target_task = next(t for t in tasks if t.task in task_content)
-                        
+
                         mock_resp = MagicMock()
                         mock_resp.usage = MagicMock(prompt_tokens=100, completion_tokens=200)
-                        
+
                         # Accuracy logic
                         if "gpt-4o" in model and "mini" not in model:
                             # BIG is always right
@@ -97,10 +307,11 @@ def main():
                             else:
                                 mock_resp.choices[0].message.content = f"The correct choice is {target_task.ground_truth}"
                         else:
-                            # SMALL is only right some of the time (simulated)
-                            import random
+                            # SMALL is only right some of the time (simulated).
+                            # Pessimistic stub — not calibrated to real gpt-4o-mini accuracy.
+                            # Deterministic ~30% "wrong" per task id so tables are reproducible.
                             mock_resp.choices = [MagicMock()]
-                            if random.random() < 0.3: # 30% failure for small
+                            if (zlib.adler32(target_task.id.encode()) % 100) < 30:
                                 mock_resp.choices[0].message.content = "I'm not sure."
                             else:
                                 if target_task.dataset == "humaneval":
@@ -110,21 +321,32 @@ def main():
                                 else:
                                     mock_resp.choices[0].message.content = f"Choice {target_task.ground_truth}"
                         return mock_resp
-                    
+
                     mock_comp.side_effect = mock_side_effect
+
                     def mock_cost_side_effect(completion_response):
                         # Use actual decision tier from last log entry
                         if router.log.steps and router.log.steps[-1].decision.tier == ModelTier.BIG:
                             return 0.01
                         return 0.0005
-                    mock_cost.side_effect = mock_cost_side_effect
-                else:
-                    # For Always-Big/Always-Small, use static cost in mock mode
-                    mock_cost.return_value = 0.01 if strat == "always-big" else 0.0005
 
-                # RUN TASKS
-                correct = 0
-                for t in tasks:
+                    mock_cost.side_effect = mock_cost_side_effect
+
+                    for i, t in enumerate(tasks):
+                        try:
+                            response = router.chat(t.task)
+                            if ds_name == "humaneval":
+                                if evaluate_code(response, t.task, t.ground_truth):
+                                    correct += 1
+                            elif eval_fn(response, t.ground_truth):
+                                correct += 1
+                        except Exception:
+                            # Budget exceeded is expected if budget is very low
+                            pass
+                        if args.verbose and (i + 1) % max(1, len(tasks) // 10 or 1) == 0:
+                            print(f"      … {i + 1}/{len(tasks)} tasks", flush=True)
+            else:
+                for i, t in enumerate(tasks):
                     try:
                         response = router.chat(t.task)
                         if ds_name == "humaneval":
@@ -132,16 +354,41 @@ def main():
                                 correct += 1
                         elif eval_fn(response, t.ground_truth):
                             correct += 1
-                    except Exception as e:
-                        # Budget exceeded is expected if budget is very low
+                    except Exception:
+                        # API/key/provider errors are counted as incorrect in live mode
                         pass
+                    if args.verbose and (i + 1) % max(1, len(tasks) // 10 or 1) == 0:
+                        print(f"      … {i + 1}/{len(tasks)} tasks", flush=True)
 
             accuracy = (correct / len(tasks)) * 100
             ds_results[strat] = {
                 "accuracy": round(accuracy, 1),
                 "cost": round(router.spent, 6),
-                "savings": round(router.log.savings_vs_always_big()["savings_pct"], 1) if strat == "baar" else 0
+                "savings": round(router.log.savings_vs_always_big()["savings_pct"], 1) if strat == "baar" else 0,
+                "rejects": router.log.reject_steps if strat == "baar" else 0,
+                "reject_rate": round((router.log.reject_steps / max(1, len(tasks))) * 100, 1) if strat == "baar" else 0,
             }
+
+            if strat == "baar" and router.log.steps:
+                n = len(router.log.steps)
+                small_n = router.log.small_calls
+                big_n = router.log.big_calls
+                rej_n = router.log.reject_steps
+                cache_hits = router.log.routing_cache_hits
+                print(
+                    f"      BAAR routing: small={small_n}, big={big_n}, reject={rej_n}, "
+                    f"route-cache_hits={cache_hits} (over {n} logged steps)",
+                    flush=True,
+                )
+                if args.verbose and n <= 50:
+                    for s in router.log.steps:
+                        d = s.decision
+                        print(
+                            f"        step {s.step_num}: tier={d.tier.value} "
+                            f"complexity={d.complexity_score:.3f} "
+                            f"route_cache_hit={getattr(d, 'routing_cache_hit', False)}",
+                            flush=True,
+                        )
 
         total_results[ds_name] = ds_results
 
@@ -155,7 +402,10 @@ def main():
     for ds, res in total_results.items():
         for strat in ["always-big", "always-small", "baar"]:
             r = res[strat]
-            savings_str = f"{r['savings']}%" if strat == "baar" else "-"
+            if strat == "baar":
+                savings_str = f"{r['savings']}% (rej {r['reject_rate']}%)"
+            else:
+                savings_str = "-"
             print(f"{ds.upper():<15} | {strat.upper():<12} | {r['accuracy']:<10} | ${r['cost']:<14.6f} | {savings_str:<8}")
         print("-" * 80)
 
