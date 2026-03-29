@@ -10,6 +10,7 @@ def main():
     print("\nUsage:")
     print("  baar-bench   : Run the scientific validation suite")
     print("  baar-stress  : Run the adversarial resilience suite")
+    print("  baar-telemetry <file.jsonl> : Summarize telemetry (reject/failover/spend)")
     print("\nSee README.md for more information.")
 
 if __name__ == "__main__":

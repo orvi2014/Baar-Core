@@ -5,6 +5,7 @@ Public API for the BAAR-Algo project.
 
 from baar.router import BAARRouter, token_counter
 from baar.core.budget import BudgetExceeded, BudgetTracker
+from baar.core.exceptions import TaskRejected
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 
@@ -14,6 +15,7 @@ __all__ = [
     "token_counter",
     "BudgetExceeded",
     "BudgetTracker",
+    "TaskRejected",
     "Router",
     "ModelTier",
     "RoutingDecision",

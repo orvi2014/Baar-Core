@@ -24,6 +24,9 @@ def make_step(
     cost=0.000025,
     cumulative=0.000025,
     forced=False,
+    estimated_value=None,
+    estimated_cost_usd=None,
+    routing_cache_hit=False,
 ):
     decision = RoutingDecision(
         tier=tier,
@@ -32,6 +35,9 @@ def make_step(
         complexity_score=complexity,
         reason="test reason",
         forced_by_budget=forced,
+        estimated_value=estimated_value,
+        estimated_cost_usd=estimated_cost_usd,
+        routing_cache_hit=routing_cache_hit,
     )
     return StepResult(
         step_num=step_num,
@@ -57,6 +63,7 @@ class TestRoutingLogAggregation:
         assert log.total_cost == 0.0
         assert log.big_calls == 0
         assert log.small_calls == 0
+        assert log.reject_steps == 0
 
     def test_add_steps(self):
         log = RoutingLog(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
@@ -88,6 +95,29 @@ class TestRoutingLogAggregation:
         log.add(make_step(tier=ModelTier.BIG))
         summary = log.summary()
         assert summary["pct_routed_to_small"] == pytest.approx(75.0)
+
+    def test_reject_steps_not_counted_as_small_or_big(self):
+        log = RoutingLog(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
+        log.add(
+            make_step(
+                step_num=1,
+                tier=ModelTier.REJECT,
+                model="",
+                cost=0.0,
+                cumulative=0.0,
+            )
+        )
+        log.add(make_step(step_num=2, tier=ModelTier.SMALL))
+        assert log.reject_steps == 1
+        assert log.small_calls == 1
+        assert log.big_calls == 0
+        assert log.total_steps == 2
+
+    def test_routing_cache_hits_count(self):
+        log = RoutingLog(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
+        log.add(make_step(routing_cache_hit=False))
+        log.add(make_step(step_num=2, routing_cache_hit=True))
+        assert log.routing_cache_hits == 1
 
 
 # ─────────────────────────────────────────────────────────
@@ -166,6 +196,17 @@ class TestStepResult:
         d = step.to_dict()
         assert d["task_preview"] == short_task
 
+    def test_to_dict_includes_value_and_cost_when_set(self):
+        step = make_step(estimated_value=0.01, estimated_cost_usd=0.02)
+        d = step.to_dict()
+        assert d["estimated_value"] == 0.01
+        assert d["estimated_cost_usd"] == 0.02
+
+    def test_to_dict_includes_routing_cache_hit_when_true(self):
+        step = make_step(routing_cache_hit=True)
+        d = step.to_dict()
+        assert d.get("routing_cache_hit") is True
+
 
 # ─────────────────────────────────────────────────────────
 # Summary structure
@@ -179,7 +220,10 @@ class TestSummaryStructure:
         required = [
             "budget_usd", "spent_usd", "remaining_usd", "utilization_pct",
             "total_steps", "small_model_calls", "big_model_calls",
-            "budget_forced_downgrades", "pct_routed_to_small",
+            "reject_steps",
+            "budget_forced_downgrades",
+            "routing_cache_hits",
+            "pct_routed_to_small",
             "savings_vs_always_big", "steps",
         ]
         for k in required:

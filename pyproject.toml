@@ -37,6 +37,7 @@ dev = [
 [project.scripts]
 baar-bench = "benchmarks.standard_eval:main"
 baar-stress = "benchmarks.stress_test:main"
+baar-telemetry = "baar.telemetry_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/orvi2014/Baar-Core"

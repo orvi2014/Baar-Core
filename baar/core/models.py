@@ -20,6 +20,9 @@ class StepResult:
     prompt_tokens: int
     completion_tokens: int
     latency_ms: float
+    attempted_models: List[str] = field(default_factory=list)
+    failover_count: int = 0
+    failover_errors: List[str] = field(default_factory=list)
 
     @property
     def model_used(self) -> str:
@@ -30,7 +33,7 @@ class StepResult:
         return self.decision.tier == ModelTier.BIG
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "step": self.step_num,
             "task_preview": self.task[:80] + ("..." if len(self.task) > 80 else ""),
             "model": self.model_used,
@@ -44,7 +47,18 @@ class StepResult:
             "cost_usd": round(self.cost, 8),
             "cumulative_cost_usd": round(self.cumulative_cost, 8),
             "latency_ms": round(self.latency_ms, 1),
+            "attempted_models": list(self.attempted_models),
+            "failover_count": self.failover_count,
         }
+        if self.failover_errors:
+            d["failover_errors"] = list(self.failover_errors)
+        if self.decision.estimated_value is not None:
+            d["estimated_value"] = self.decision.estimated_value
+        if self.decision.estimated_cost_usd is not None:
+            d["estimated_cost_usd"] = self.decision.estimated_cost_usd
+        if self.decision.routing_cache_hit:
+            d["routing_cache_hit"] = True
+        return d
 
 
 @dataclass
@@ -71,23 +85,33 @@ class RoutingLog:
 
     @property
     def big_calls(self) -> int:
-        return sum(1 for s in self.steps if s.used_big)
+        return sum(1 for s in self.steps if s.decision.tier == ModelTier.BIG)
 
     @property
     def small_calls(self) -> int:
-        return sum(1 for s in self.steps if not s.used_big)
+        return sum(1 for s in self.steps if s.decision.tier == ModelTier.SMALL)
+
+    @property
+    def reject_steps(self) -> int:
+        return sum(1 for s in self.steps if s.decision.tier == ModelTier.REJECT)
 
     @property
     def budget_forced_downgrades(self) -> int:
         return sum(1 for s in self.steps if s.decision.forced_by_budget)
 
     @property
+    def routing_cache_hits(self) -> int:
+        return sum(1 for s in self.steps if s.decision.routing_cache_hit)
+
+    @property
     def always_big_cost(self) -> float:
         """What this would have cost if we used big model for every step."""
         return sum(
             s.cost * (s.decision.complexity_score / max(0.01, s.decision.complexity_score))
-            if not s.used_big
+            if s.decision.tier == ModelTier.SMALL
             else s.cost
+            if s.decision.tier == ModelTier.BIG
+            else 0.0
             for s in self.steps
         )
 
@@ -99,7 +123,11 @@ class RoutingLog:
         # Estimate always-big cost: use ratio of big/small pricing
         # gpt-4o is ~15x more expensive than gpt-4o-mini per token
         estimated_always_big = sum(
-            s.cost * 15 if not s.used_big else s.cost
+            s.cost * 15
+            if s.decision.tier == ModelTier.SMALL
+            else s.cost
+            if s.decision.tier == ModelTier.BIG
+            else 0.0
             for s in self.steps
         )
         saved = estimated_always_big - self.total_cost
@@ -114,6 +142,7 @@ class RoutingLog:
 
     def summary(self) -> dict:
         savings = self.savings_vs_always_big()
+        completion_steps = self.small_calls + self.big_calls
         return {
             "budget_usd": self.budget,
             "spent_usd": round(self.total_cost, 8),
@@ -122,8 +151,12 @@ class RoutingLog:
             "total_steps": self.total_steps,
             "small_model_calls": self.small_calls,
             "big_model_calls": self.big_calls,
+            "reject_steps": self.reject_steps,
             "budget_forced_downgrades": self.budget_forced_downgrades,
-            "pct_routed_to_small": round(self.small_calls / max(1, self.total_steps) * 100, 1),
+            "routing_cache_hits": self.routing_cache_hits,
+            "pct_routed_to_small": round(
+                self.small_calls / max(1, completion_steps) * 100, 1
+            ),
             "savings_vs_always_big": savings,
             "steps": [s.to_dict() for s in self.steps],
         }
@@ -143,6 +176,8 @@ class RoutingLog:
         print(f"  Total steps:   {s['total_steps']}")
         print(f"  → small model: {s['small_model_calls']} calls  ({s['pct_routed_to_small']}%)")
         print(f"  → big model:   {s['big_model_calls']} calls")
+        print(f"  → value rejects: {s['reject_steps']}")
+        print(f"  → routing cache hits: {s['routing_cache_hits']}")
         print(f"  → budget forced downgrades: {s['budget_forced_downgrades']}")
         print("─" * 60)
         print(f"  BAAR cost:              ${sav['baar_cost']:.6f}")
@@ -153,11 +188,12 @@ class RoutingLog:
         print(f"  {'─'*4} {'─'*14} {'─'*10} {'─'*10}  {'─'*20}")
         for step in s["steps"]:
             forced = " [BUDGET]" if step["forced_by_budget"] else ""
+            cached = " [ROUTE-CACHE]" if step.get("routing_cache_hit") else ""
             print(
                 f"  {step['step']:<5} "
                 f"{step['model']:<15} "
                 f"{step['complexity_score']:<11.3f} "
                 f"${step['cost_usd']:>9.6f}  "
-                f"{step['routing_reason'][:30]}{forced}"
+                f"{step['routing_reason'][:30]}{forced}{cached}"
             )
         print("═" * 60 + "\n")

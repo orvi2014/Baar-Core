@@ -33,7 +33,7 @@ def example_multi_step():
     print("Example 2: Multi-step routing")
     print("=" * 50)
 
-    router = BAARRouter(budget=0.20, complexity_threshold=0.65)
+    router = BAARRouter(budget=0.20, complexity_threshold=0.80)
 
     tasks = [
         "What is 42 * 17?",

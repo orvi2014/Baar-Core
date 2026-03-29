@@ -67,10 +67,10 @@ def run_stress_test():
         mid_task = "Summarize the key takeaways from the following 3 paragraphs of meeting notes."
         router.chat(mid_task)
         last_step = router.log.steps[-1]
-        # At 0.65 threshold, 0.5 complexity should go to SMALL
+        # Default threshold 0.80; ~0.5 complexity should go to SMALL
         status = "PASSED ✅" if not last_step.used_big else "WALKTHROUGH (Routed to BIG)"
         print(f"    RESULT: {status} (Complexity score: {last_step.decision.complexity_score:.3f})")
-        print(f"    INFO: Routed to {last_step.decision.tier.upper()} because threshold is 0.65")
+        print(f"    INFO: Routed to {last_step.decision.tier.value.upper()} (default complexity_threshold=0.80)")
 
         # 4. Budget Kill-Switch Stress
         print("  → ATTACK: Denial of Wallet (Overwhelming Request)...")
