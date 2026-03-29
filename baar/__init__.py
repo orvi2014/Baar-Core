@@ -9,7 +9,7 @@ from baar.core.exceptions import TaskRejected
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 __all__ = [
     "BAARRouter",
     "token_counter",
