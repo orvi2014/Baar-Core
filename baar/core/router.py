@@ -70,6 +70,7 @@ class Router:
         routing_cache_size: int = 256,
         routing_cache_enabled: bool = True,
         small_exploration_rate: float = 0.0,
+        routing_task_char_limit: int = 500,
     ):
         self.small_model = small_model
         self.big_model = big_model
@@ -79,6 +80,7 @@ class Router:
         self._routing_cache_enabled = bool(routing_cache_enabled)
         self._routing_cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
         self.small_exploration_rate = max(0.0, min(1.0, float(small_exploration_rate)))
+        self._routing_task_char_limit = max(64, int(routing_task_char_limit))
 
     def decide(
         self,
@@ -167,10 +169,33 @@ class Router:
         return " ".join(task.split()).strip()
 
     def _fingerprint_for_routing_cache(self, task: str) -> str:
-        """LLM routing prompt uses task[:500]; heuristic uses the full task."""
+        """LLM routing fingerprint mirrors the prompt view; heuristic uses full task."""
         if self.use_llm_router:
-            return self._normalize_task_text(task[:500])
+            return self._normalize_task_text(self._router_task_view(task))
         return self._normalize_task_text(task)
+
+    def _router_task_view(self, task: str) -> str:
+        """
+        Build the task slice sent to the routing LLM.
+        For long prompts, preserve head + middle + tail to reduce underestimation risk.
+        """
+        limit = self._routing_task_char_limit
+        if len(task) <= limit:
+            return task
+        base = limit // 3
+        rem = limit - (base * 3)
+        head_len = base + (1 if rem > 0 else 0)
+        mid_len = base + (1 if rem > 1 else 0)
+        tail_len = base
+        mid_start = max(0, (len(task) - mid_len) // 2)
+        mid_end = mid_start + mid_len
+        return (
+            f"{task[:head_len]}"
+            "\n...[TRUNCATED SEGMENT]...\n"
+            f"{task[mid_start:mid_end]}"
+            "\n...[TRUNCATED SEGMENT]...\n"
+            f"{task[-tail_len:]}"
+        )
 
     def _routing_cache_key(self, task: str) -> str:
         fp = self._fingerprint_for_routing_cache(task)
@@ -218,13 +243,14 @@ class Router:
     def _llm_score(self, task: str) -> tuple[float, str]:
         """Use cheap model to semantically score complexity."""
         import json
+        router_view = self._router_task_view(task)
 
         response = litellm.completion(
             model=self.small_model,
             messages=[
                 {
                     "role": "user",
-                    "content": ROUTER_PROMPT.format(task=task[:500]),  # cap at 500 chars
+                    "content": ROUTER_PROMPT.format(task=router_view),
                 }
             ],
             max_tokens=60,
@@ -243,13 +269,12 @@ class Router:
         raw_complexity = float(parsed.get("complexity", 0.5))
         reason = str(parsed.get("reason", "llm scored"))
 
-        # Normalize raw classifier output into a wider, more useful band.
-        # 1) clamp  2) square (push medium lower, keep very high high)
-        # 3) small length-bias correction
+        # Normalize raw classifier output with a conservative correction.
+        # 1) clamp
+        # 2) small length-bias correction (kept intentionally mild)
         complexity = max(0.0, min(1.0, raw_complexity))
-        complexity = complexity ** 2
         length_penalty = min(len(task) / 1000.0, 1.0)
-        complexity = max(0.0, complexity - (0.2 * length_penalty))
+        complexity = max(0.0, complexity - (0.05 * length_penalty))
 
         return complexity, f"llm: {reason}"
 

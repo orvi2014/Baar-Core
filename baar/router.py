@@ -72,6 +72,7 @@ class BAARRouter:
         routing_cache_enabled: bool = True,
         small_exploration_rate: float = 0.0,
         min_cost_threshold: float = 0.0001,
+        routing_task_char_limit: int = 500,
     ):
         _check_litellm_version()
         # Ensure clean output for users by disabling litellm's internal logging
@@ -97,6 +98,7 @@ class BAARRouter:
             routing_cache_size=routing_cache_size,
             routing_cache_enabled=routing_cache_enabled,
             small_exploration_rate=small_exploration_rate,
+            routing_task_char_limit=routing_task_char_limit,
         )
         self._log = RoutingLog(
             budget=budget,

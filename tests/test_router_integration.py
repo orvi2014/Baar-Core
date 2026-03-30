@@ -55,6 +55,13 @@ class TestBAARRouterInit:
         assert router.budget == 0.50
         assert router.small_model == "claude-haiku-3-5"
 
+    def test_custom_routing_task_char_limit_is_forwarded(self):
+        router = BAARRouter(
+            budget=0.10,
+            routing_task_char_limit=900,
+        )
+        assert router._router._routing_task_char_limit == 900
+
     def test_zero_budget_raises(self):
         with pytest.raises(ValueError, match="Budget must be positive"):
             BAARRouter(budget=0.0)
