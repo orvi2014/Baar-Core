@@ -40,6 +40,9 @@ benchmarks/cache/
 .openai_api_key
 .anthropic_api_key
 
+# Cursor IDE
+.cursor/
+
 # OS
 .DS_Store
 Thumbs.db
