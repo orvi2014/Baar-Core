@@ -265,6 +265,32 @@ class TestLLMRouter:
             decision = router.decide("some task", remaining_budget=1.0, budget_utilization=0.0)
             assert decision.tier in (ModelTier.SMALL, ModelTier.BIG)
 
+    def test_router_task_view_preserves_head_middle_and_tail(self):
+        router = Router(use_llm_router=True, routing_task_char_limit=99)
+        task = ("A" * 120) + ("M" * 120) + ("Z" * 120)
+        view = router._router_task_view(task)
+
+        assert len(view) > 99  # includes truncation markers
+        assert view.startswith("A" * 33)
+        assert ("M" * 33) in view
+        assert view.endswith("Z" * 33)
+        assert view.count("[TRUNCATED SEGMENT]") == 2
+
+    def test_llm_score_uses_router_task_view_in_prompt(self):
+        router = Router(use_llm_router=True, routing_task_char_limit=90)
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = '{"complexity": 0.5, "reason": "mid"}'
+        task = ("A" * 100) + ("M" * 100) + ("Z" * 100)
+
+        with patch("baar.core.router.litellm.completion", return_value=mock_response) as m:
+            router._llm_score(task)
+
+        prompt_sent = m.call_args.kwargs["messages"][0]["content"]
+        assert prompt_sent.count("[TRUNCATED SEGMENT]") == 2
+        assert ("A" * 30) in prompt_sent
+        assert ("M" * 30) in prompt_sent
+        assert ("Z" * 30) in prompt_sent
+
 
 # ─────────────────────────────────────────────────────────
 # Complexity LRU (routing) cache
@@ -337,6 +363,15 @@ class TestRoutingCache:
         d2 = router.decide("hello there", 1.0, 0.0)
         assert d1.routing_cache_hit is False
         assert d2.routing_cache_hit is True
+
+    def test_cache_key_changes_when_routing_window_changes(self):
+        task = ("A" * 100) + ("Z" * 100)
+        r_small = Router(use_llm_router=True, routing_task_char_limit=80)
+        r_large = Router(use_llm_router=True, routing_task_char_limit=160)
+
+        k_small = r_small._routing_cache_key(task)
+        k_large = r_large._routing_cache_key(task)
+        assert k_small != k_large
 
 
 class TestExploration:

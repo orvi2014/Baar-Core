@@ -61,7 +61,7 @@ graph TD
 
 ## Benchmarks
 
-### Mock benchmark (deterministic, calibrated policy)
+### Mock benchmark (deterministic routing sanity)
 
 Command:
 
@@ -71,23 +71,21 @@ baar-bench \
   --limit 200 \
   --budget 10 \
   --mock \
-  --value-policy simple \
-  --auto-calibrate-alpha \
-  --target-reject-rate 0.05 \
-  --alpha-source percentile \
-  --max-reject-rate 0.5 \
-  --small-exploration-rate 0.1 \
+  --value-policy none \
+  --complexity-threshold 0.80 \
+  --coding-threshold 0.75 \
+  --small-exploration-rate 0.0 \
   --seed 42
 ```
 
 | Dataset | Strategy | Accuracy | Total cost | vs always-big |
 | :--- | :--- | :---: | :---: | :---: |
-| **MMLU** | Always big | 100.0% | $1.990500 | — |
-| **MMLU** | **Baar-Core** | **91.5%** | **$1.625000** | **60.9% cheaper** |
-| **GSM8K** | Always big | 100.0% | $1.990500 | — |
-| **GSM8K** | **Baar-Core** | **90.0%** | **$1.478000** | **60.4% cheaper** |
-| **HumanEval** | Always big | 100.0% | $1.630500 | — |
-| **HumanEval** | **Baar-Core** | **92.7%** | **$1.369500** | **48.1% cheaper** |
+| **MMLU** | Always big | 50.5% | $1.000500 | — |
+| **MMLU** | **Baar-Core** | **69.5%** | **$0.157000** | **92.8% cheaper** |
+| **GSM8K** | Always big | 50.5% | $1.000500 | — |
+| **GSM8K** | **Baar-Core** | **71.5%** | **$0.128500** | **93.3% cheaper** |
+| **HumanEval** | Always big | 61.6% | $1.000500 | — |
+| **HumanEval** | **Baar-Core** | **79.9%** | **$0.614000** | **65.3% cheaper** |
 
 ### Live benchmark (small subset sanity check)
 
@@ -99,6 +97,8 @@ baar-bench \
   --limit 10 \
   --budget 2 \
   --value-policy none \
+  --complexity-threshold 0.80 \
+  --coding-threshold 0.75 \
   --small-exploration-rate 0.0 \
   --seed 42
 ```
@@ -112,7 +112,7 @@ baar-bench \
 | **HumanEval** | Always big | 0.0% | $0.032125 | — |
 | **HumanEval** | **Baar-Core** | **0.0%** | **$0.002743** | **93.3% cheaper** |
 
-Live results can vary significantly by provider/model quality, API reliability, and prompt behavior. Use live runs as environment-specific checks, and use mock runs for reproducible routing/cost trade-off iteration.
+Live results can vary significantly by provider/model quality, API reliability, and prompt behavior. Use live runs as environment-specific checks, and use mock runs for reproducible routing/cost trade-off iteration. In mock mode, routing classifier calls are simulated separately from execution calls so routing and spend behavior can be measured without external APIs.
 
 ---
 
@@ -126,7 +126,7 @@ print(router.chat("What is the capital of France?"))          # → usually chea
 print(router.chat("Write an optimized CUDA matmul kernel."))  # → capable model if affordable
 
 # Kill-switch: budget too low for any safe call → blocked before the API
-tight = BAARRouter(budget=0.00001)
+tight = BAARRouter(budget=0.00001, min_cost_threshold=0.001)
 try:
     tight.chat("Any prompt")
 except RuntimeError as e:
@@ -163,12 +163,20 @@ This prints reject rate, failover rate, total spend, and per-model spend distrib
 
 Default **`complexity_threshold=0.80`** routes more traffic to the cheap model than `0.65` did; the effective threshold also **rises with budget utilization** so BIG is harder to justify as spend accumulates. Tighten or loosen with `complexity_threshold` if your workload skews very easy or very hard.
 
+Additional tuning knobs:
+
+- **`min_cost_threshold`** — hard local floor for zero-call rejection before routing/completion.
+- **`routing_task_char_limit`** — routing view budget for long prompts; router samples head + middle + tail segments.
+- **`--coding-threshold` (benchmark CLI)** — separate threshold for coding-heavy sets like HumanEval.
+
 ```python
 router = BAARRouter(
     budget=0.10,
     small_model="gpt-4o-mini",
     big_model="gpt-4o",
     complexity_threshold=0.80,
+    min_cost_threshold=0.001,
+    routing_task_char_limit=900,
 )
 ```
 

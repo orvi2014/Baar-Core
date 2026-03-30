@@ -21,6 +21,53 @@ from benchmarks.data_loader import get_mmlu_subset, get_gsm8k_subset, get_humane
 from benchmarks.evaluators import evaluate_mmlu, evaluate_gsm8k, evaluate_code
 
 
+def _is_routing_prompt(task_content: str) -> bool:
+    lowered = task_content.lower()
+    return (
+        "task complexity classifier for an ai routing system" in lowered
+        and "task to classify:" in lowered
+    )
+
+
+def _extract_routing_task(task_content: str) -> str:
+    marker = "Task to classify:"
+    if marker in task_content:
+        return task_content.split(marker, 1)[1].strip()
+    return task_content
+
+
+def _mock_router_json(task_text: str) -> str:
+    """
+    Mock routing-model response: always return valid JSON.
+    This keeps BAAR routing behavior meaningful in --mock mode.
+    """
+    text = task_text.lower()
+    complexity = 0.22
+    reason = "simple request"
+
+    if any(k in text for k in ["def ", "class ", "import ", "```", "function", "debug", "error", "traceback"]):
+        complexity, reason = 0.86, "code content"
+    elif any(k in text for k in ["analyze", "compare", "trade-off", "architecture", "evaluate", "reasoning"]):
+        complexity, reason = 0.78, "reasoning required"
+    elif any(k in text for k in ["####", "show your work"]):
+        complexity, reason = 0.74, "structured math"
+    elif any(k in text for k in ["choices:", "options:", "choose the correct"]):
+        complexity, reason = 0.62, "multi-choice"
+    elif len(task_text) > 700:
+        complexity, reason = 0.58, "long prompt"
+
+    return json.dumps({"complexity": complexity, "reason": reason})
+
+
+def _find_target_task(tasks: list[StandardTask], task_content: str) -> StandardTask | None:
+    """Best-effort task lookup for benchmark mock responses."""
+    exact = next((t for t in tasks if t.task == task_content), None)
+    if exact is not None:
+        return exact
+    contains = next((t for t in tasks if t.task in task_content or task_content in t.task), None)
+    return contains
+
+
 def build_value_fn(policy: str):
     """
     Returns a lightweight value estimator in USD units for BAAR value gating.
@@ -124,6 +171,18 @@ def main():
     parser.add_argument("--mock", action="store_true", help="Run with mocks (free)")
     parser.add_argument("--budget", type=float, default=1.0, help="Initial budget for the run")
     parser.add_argument(
+        "--complexity-threshold",
+        type=float,
+        default=0.80,
+        help="Default BAAR complexity threshold for non-coding datasets.",
+    )
+    parser.add_argument(
+        "--coding-threshold",
+        type=float,
+        default=0.75,
+        help="BAAR complexity threshold for coding-heavy datasets (HumanEval).",
+    )
+    parser.add_argument(
         "--value-policy",
         type=str,
         choices=["none", "simple", "strict"],
@@ -190,7 +249,9 @@ def main():
         f"value_reject_alpha={args.value_reject_alpha}, max_reject_rate={args.max_reject_rate}, "
         f"auto_calibrate_alpha={args.auto_calibrate_alpha}, alpha_source={args.alpha_source}, "
         f"target_reject_rate={args.target_reject_rate}, calibration_sample={args.calibration_sample}, "
-        f"small_exploration_rate={args.small_exploration_rate}, seed={args.seed}"
+        f"small_exploration_rate={args.small_exploration_rate}, "
+        f"complexity_threshold={args.complexity_threshold}, "
+        f"coding_threshold={args.coding_threshold}, seed={args.seed}"
     )
 
     datasets = ["mmlu", "gsm8k", "humaneval"] if args.dataset == "all" else [args.dataset]
@@ -221,6 +282,9 @@ def main():
 
         for strat in strategies:
             print(f"  → Running strategy: {strat.upper()}...")
+            threshold_for_dataset = (
+                args.coding_threshold if ds_name == "humaneval" else args.complexity_threshold
+            )
             value_fn = None
             alpha_for_run = args.value_reject_alpha
             if strat == "baar":
@@ -251,6 +315,7 @@ def main():
                     )
             router = BAARRouter(
                 budget=args.budget,
+                complexity_threshold=threshold_for_dataset,
                 value_fn=value_fn,
                 value_reject_alpha=alpha_for_run,
                 max_reject_rate=args.max_reject_rate,
@@ -286,18 +351,27 @@ def main():
                 with patch("litellm.completion") as mock_comp, \
                      patch("baar.core.budget.completion_cost") as mock_cost:
                     def mock_side_effect(model, messages, **kwargs):
-                        task_content = messages[-1]["content"]
-                        # We need to find the task to get ground_truth
-                        # This is a bit slow in O(N^2) but fine for benchmark subset sizes
-                        target_task = next(t for t in tasks if t.task in task_content)
-
+                        task_content = str(messages[-1]["content"])
                         mock_resp = MagicMock()
                         mock_resp.usage = MagicMock(prompt_tokens=100, completion_tokens=200)
+                        mock_resp.choices = [MagicMock()]
+
+                        # Route-scoring calls must return classifier JSON, not final answers.
+                        if _is_routing_prompt(task_content):
+                            routing_task = _extract_routing_task(task_content)
+                            mock_resp.choices[0].message.content = _mock_router_json(routing_task)
+                            return mock_resp
+
+                        # For execution calls, map message content to benchmark task.
+                        target_task = _find_target_task(tasks, task_content)
+                        if target_task is None:
+                            # Keep benchmark resilient if content matching misses.
+                            mock_resp.choices[0].message.content = "I'm not sure."
+                            return mock_resp
 
                         # Accuracy logic
                         if "gpt-4o" in model and "mini" not in model:
                             # BIG is always right
-                            mock_resp.choices = [MagicMock()]
                             if target_task.dataset == "humaneval":
                                 # For coding, we want just the code
                                 mock_resp.choices[0].message.content = target_task.ground_truth
@@ -310,7 +384,6 @@ def main():
                             # SMALL is only right some of the time (simulated).
                             # Pessimistic stub — not calibrated to real gpt-4o-mini accuracy.
                             # Deterministic ~30% "wrong" per task id so tables are reproducible.
-                            mock_resp.choices = [MagicMock()]
                             if (zlib.adler32(target_task.id.encode()) % 100) < 30:
                                 mock_resp.choices[0].message.content = "I'm not sure."
                             else:
