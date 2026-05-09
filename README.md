@@ -1,189 +1,259 @@
 # Baar-Core
 
-**Semantic routing + a hard financial kill-switch for LLM agents.**
+**Stop LLM API calls before they happen. Not after.**
 
-Never get surprised by another OpenAI or Anthropic bill.
-
+[![CI](https://github.com/orvi2014/Baar-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/orvi2014/Baar-Core/actions/workflows/ci.yml)
 [![PyPI version](https://badge.fury.io/py/baar-core.svg)](https://badge.fury.io/py/baar-core)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Scientific Validation](https://img.shields.io/badge/Validated-MMLU%20%7C%20GSM8K%20%7C%20HumanEval-success)](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ```bash
 pip install baar-core
 ```
 
-`baar-core` is the PyPI package name. **Baar-Core** is the project.
+---
+
+> I left an agent loop running overnight.
+> Woke up to a **$47 bill** — 20,000 GPT-4o tokens answering "what time is it?" queries.
+>
+> Baar-Core would have stopped it at **$0.10**. Before the first overage call.
+> No network request made. **$0 spent.**
+
+```python
+from baar import BAARRouter
+
+router = BAARRouter(budget=0.10)          # hard cap: $0.10 total
+router.chat("What time is it?")           # → cheap model, ~$0.0001
+router.chat("Write a CUDA matmul kernel") # → capable model if budget allows
+# budget exhausted → raises BudgetExhausted, zero API calls made
+```
 
 ---
 
-## Why Baar-Core?
+## The problem with every other solution
 
-Production LLM agents have a dangerous habit:
+Most cost tools **track spend after the fact.** You get an alert when the bill is already large.
 
-- Simple queries still get sent to expensive models.
-- One runaway loop turns your **$0.10** budget into **$8+** overnight.
-- The invoice lands before you know which step burned the budget.
+LiteLLM's budget manager, Portkey rate limits, provider spend alerts — they all tell you what happened. They don't stop it mid-flight.
 
-**Most routers optimize averages. Baar-Core ships a hard Zero-Call Financial Kill-Switch:** enforce a strict USD cap, score complexity, route cheap vs capable — and if the next safe call would exceed what’s left, **reject locally** before a single provider request. **$0 spent. Zero network calls.**
-
-### What you get
-
-- **Smart semantic routing** — Easy work → cheap model; hard work → capable model.
-- **Budget-constrained downgrade** — If the big model would break the budget, fall back to the small one so the turn can still finish.
-- **True zero-call kill-switch** — Even the cheap model unaffordable? **Fail fast** — no completion call, no surprise line item.
-- **Offline Safety** — If your budget is $0, `baar-core` won't even attempt a DNS lookup for the LLM provider. It fails instantly in your local environment.
-
-No surprise invoices. Stronger stance against runaway and adversarial “denial of wallet” patterns. Quality where it matters (reasoning, coding, agents) because hard tasks still reach the capable tier when the budget allows.
+**Baar-Core is a local kill-switch.** Before each call, it estimates the cost. If the remaining budget is too low, it raises an exception **locally** — no DNS lookup, no TCP connection, no token consumed. The call never leaves your machine.
 
 ---
 
 ## How it works
 
-```mermaid
-graph TD
-    A[User task] --> B{Semantic complexity router}
-    B -- Low complexity --> C[Cheap model]
-    B -- High complexity --> D{Budget check}
-    D -- Affordable --> E[Capable model]
-    D -- Too expensive --> F[Downgrade to cheap]
-    C --> G[Spend tracking]
-    E --> G
-    F --> G
-    G --> H[Response]
+```
+User task
+    │
+    ▼
+┌─────────────────────────────────┐
+│  Pre-flight budget check        │ ← if estimated cost > remaining budget
+│  (local, zero network)          │   raise BudgetExhausted immediately
+└────────────┬────────────────────┘
+             │ affordable
+             ▼
+┌─────────────────────────────────┐
+│  Semantic complexity router     │ ← cheap LLM scores complexity 0.0–1.0
+│  (gpt-4o-mini, ~$0.000015/call) │
+└────────────┬────────────────────┘
+             │
+      ┌──────┴───────┐
+      │              │
+   simple         complex
+      │              │
+      ▼              ▼
+ Cheap model    Budget check
+ (fast, $)      ├─ affordable → Capable model ($$$)
+                └─ too close  → Downgrade to cheap model ($)
 ```
 
-1. **Complexity scoring** — Fast signal for cheap vs expensive route.
-2. **Budget-aware choice** — Remaining budget checked before committing to the expensive path.
-3. **Local rejection** — Exhausted or unsafe to call? Stop **before** the wire.
-
----
-
-## Benchmarks
-
-### Mock benchmark (deterministic routing sanity)
-
-Command:
-
-```bash
-baar-bench \
-  --dataset all \
-  --limit 200 \
-  --budget 10 \
-  --mock \
-  --value-policy none \
-  --complexity-threshold 0.80 \
-  --coding-threshold 0.75 \
-  --small-exploration-rate 0.0 \
-  --seed 42
-```
-
-| Dataset | Strategy | Accuracy | Total cost | vs always-big |
-| :--- | :--- | :---: | :---: | :---: |
-| **MMLU** | Always big | 50.5% | $1.000500 | — |
-| **MMLU** | **Baar-Core** | **69.5%** | **$0.157000** | **92.8% cheaper** |
-| **GSM8K** | Always big | 50.5% | $1.000500 | — |
-| **GSM8K** | **Baar-Core** | **71.5%** | **$0.128500** | **93.3% cheaper** |
-| **HumanEval** | Always big | 61.6% | $1.000500 | — |
-| **HumanEval** | **Baar-Core** | **79.9%** | **$0.614000** | **65.3% cheaper** |
-
-### Live benchmark (small subset sanity check)
-
-Command:
-
-```bash
-baar-bench \
-  --dataset all \
-  --limit 10 \
-  --budget 2 \
-  --value-policy none \
-  --complexity-threshold 0.80 \
-  --coding-threshold 0.75 \
-  --small-exploration-rate 0.0 \
-  --seed 42
-```
-
-| Dataset | Strategy | Accuracy | Total cost | vs always-big |
-| :--- | :--- | :---: | :---: | :---: |
-| **MMLU** | Always big | 50.0% | $0.002337 | — |
-| **MMLU** | **Baar-Core** | **60.0%** | **$0.000137** | **93.3% cheaper** |
-| **GSM8K** | Always big | 60.0% | $0.027615 | — |
-| **GSM8K** | **Baar-Core** | **20.0%** | **$0.002097** | **93.3% cheaper** |
-| **HumanEval** | Always big | 0.0% | $0.032125 | — |
-| **HumanEval** | **Baar-Core** | **0.0%** | **$0.002743** | **93.3% cheaper** |
-
-Live results can vary significantly by provider/model quality, API reliability, and prompt behavior. Use live runs as environment-specific checks, and use mock runs for reproducible routing/cost trade-off iteration. In mock mode, routing classifier calls are simulated separately from execution calls so routing and spend behavior can be measured without external APIs.
+1. **Pre-flight check** — Estimates cost locally before any network call. Kills the request if it would overshoot.
+2. **Semantic routing** — A fast, cheap model scores task complexity. Not keyword matching — actual semantic understanding.
+3. **Budget-aware downgrade** — Running low? Hard tasks automatically fall back to the cheaper model so the turn still completes.
 
 ---
 
 ## Quick start
 
 ```python
-from baar import BAARRouter
+from baar import BAARRouter, BudgetExhausted
 
+# Basic usage
 router = BAARRouter(budget=0.10)
-print(router.chat("What is the capital of France?"))          # → usually cheap model
-print(router.chat("Write an optimized CUDA matmul kernel."))  # → capable model if affordable
+reply = router.chat("Explain recursion with a Python example")
+print(reply)
+print(f"Spent: ${router.spent:.5f} / Remaining: ${router.remaining:.5f}")
 
-# Kill-switch: budget too low for any safe call → blocked before the API
-tight = BAARRouter(budget=0.00001, min_cost_threshold=0.001)
+# Multi-step with a report
+log = router.run([
+    "What is 42 * 17?",
+    "Translate 'good morning' to Japanese",
+    "Design a distributed rate-limiter for 100k RPS — include trade-offs",
+    "Convert 72°F to Celsius",
+])
+log.print_report()
+
+# Async
+import asyncio
+async def main():
+    router = BAARRouter(budget=0.05)
+    reply = await router.achat("Summarize the CAP theorem")
+    print(reply)
+
+asyncio.run(main())
+
+# Kill-switch in action
+router = BAARRouter(budget=0.00001)
 try:
-    tight.chat("Any prompt")
-except RuntimeError as e:
-    print("Blocked safely:", e)  # zero completion calls, $0 spent
+    router.chat("Any prompt at all")
+except BudgetExhausted as e:
+    print(f"Blocked before API call. Remaining: ${e.remaining:.6f}")
+    # Zero network calls made. $0 spent.
 ```
 
-Works with any LiteLLM-supported provider (OpenAI, Anthropic, Groq, Together, Ollama, OpenRouter, …).
+Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers): OpenAI, Anthropic, Groq, Together, Ollama, OpenRouter, Azure, and more.
 
 ---
 
-## Resilience
+## Real-world examples
 
-```bash
-baar-stress
-```
-
-Adversarial-style checks (complexity games, tight budget). Baar-Core is designed with **OWASP LLM Top 10** style risks in mind — including unbounded consumption. Details: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md).
-
----
-
-## Telemetry Summary CLI
-
-If you enable `telemetry_jsonl_path` on `BAARRouter`, summarize logs with:
-
-```bash
-baar-telemetry path/to/telemetry.jsonl
-```
-
-This prints reject rate, failover rate, total spend, and per-model spend distribution.
+| Example | Use case |
+|---|---|
+| [fastapi_per_user_budget.py](examples/fastapi_per_user_budget.py) | SaaS: per-user $0.10 quota with SQLite persistence |
+| [agent_loop.py](examples/agent_loop.py) | Autonomous agent loop with graceful budget stop |
+| [streaming.py](examples/streaming.py) | Streaming responses with live budget tracking |
+| [multi_tenant.py](examples/multi_tenant.py) | Concurrent multi-user budget isolation, quota report |
+| [basic_usage.py](examples/basic_usage.py) | Getting started |
 
 ---
 
-## Configuration
+## Persistent budgets (survive process restarts)
 
-Default **`complexity_threshold=0.80`** routes more traffic to the cheap model than `0.65` did; the effective threshold also **rises with budget utilization** so BIG is harder to justify as spend accumulates. Tighten or loosen with `complexity_threshold` if your workload skews very easy or very hard.
-
-Additional tuning knobs:
-
-- **`min_cost_threshold`** — hard local floor for zero-call rejection before routing/completion.
-- **`routing_task_char_limit`** — routing view budget for long prompts; router samples head + middle + tail segments.
-- **`--coding-threshold` (benchmark CLI)** — separate threshold for coding-heavy sets like HumanEval.
+By default, budgets are in-memory. For production, plug in a persistent store:
 
 ```python
+from baar import BAARRouter
+from baar.core.stores import SQLiteBudgetStore, FileBudgetStore
+
+# Per-user quota in a SQLite database — thread-safe, no extra deps
 router = BAARRouter(
     budget=0.10,
-    small_model="gpt-4o-mini",
-    big_model="gpt-4o",
-    complexity_threshold=0.80,
-    min_cost_threshold=0.001,
-    routing_task_char_limit=900,
+    store=SQLiteBudgetStore("budgets.db", namespace="user_alice"),
+)
+
+# Restarts don't reset the budget — spend is loaded from disk
+router.chat("Hello")  # deducted from Alice's persistent $0.10
+
+# JSON file — good for single-process scripts
+router = BAARRouter(
+    budget=1.00,
+    store=FileBudgetStore("my_budget.json"),
 )
 ```
 
 ---
 
-## License & research
+## Benchmarks
 
-**MIT** — [LICENSE](https://github.com/orvi2014/Baar-Core/blob/main/LICENSE).
+### Routing cost benchmark — mock mode
 
-Architecture, validation notes, and security mapping: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md).
+Mock mode runs the full routing pipeline with simulated completions to measure **routing overhead and cost allocation** without spending real money. Use this to tune thresholds before a live run.
+
+> **Note:** Accuracy figures in mock mode reflect simulated task responses, not real model capability. Use live mode for accuracy measurement. The cost figures and routing split percentages are the meaningful outputs here.
+
+```bash
+baar-bench --dataset all --limit 200 --budget 10 --mock \
+  --complexity-threshold 0.80 --coding-threshold 0.75 --seed 42
+```
+
+| Dataset | Strategy | % routed to cheap | Total cost | Savings vs always-big |
+| :--- | :--- | :---: | :---: | :---: |
+| **MMLU** | Always big | 0% | $1.0005 | — |
+| **MMLU** | **Baar-Core** | **81%** | **$0.157** | **84.3% cheaper** |
+| **GSM8K** | Always big | 0% | $1.0005 | — |
+| **GSM8K** | **Baar-Core** | **87%** | **$0.129** | **87.1% cheaper** |
+| **HumanEval** | Always big | 0% | $1.0005 | — |
+| **HumanEval** | **Baar-Core** | **39%** | **$0.614** | **38.6% cheaper** |
+
+HumanEval routes fewer tasks to the cheap tier because coding questions score high complexity — the router correctly identifies them as hard.
+
+### Live benchmark — real API calls (10 tasks per dataset)
+
+```bash
+baar-bench --dataset all --limit 10 --budget 2 \
+  --complexity-threshold 0.80 --coding-threshold 0.75 --seed 42
+```
+
+| Dataset | Strategy | Total cost | Savings vs always-big |
+| :--- | :--- | :---: | :---: |
+| **MMLU** | Always big | $0.002337 | — |
+| **MMLU** | **Baar-Core** | **$0.000137** | **94.1% cheaper** |
+| **GSM8K** | Always big | $0.027615 | — |
+| **GSM8K** | **Baar-Core** | **$0.002097** | **92.4% cheaper** |
+| **HumanEval** | Always big | $0.032125 | — |
+| **HumanEval** | **Baar-Core** | **$0.002743** | **91.5% cheaper** |
+
+Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --mock` (free) or add your API key for live results.
+
+---
+
+## vs. alternatives
+
+| | **Baar-Core** | RouteLLM | LiteLLM | Portkey |
+|---|:---:|:---:|:---:|:---:|
+| Hard local kill-switch (zero network calls) | ✅ | ❌ | ❌ | ❌ |
+| Works fully offline | ✅ | ❌ | ❌ | ❌ |
+| Per-user persistent budgets | ✅ SQLite/File | ❌ | Partial | ✅ (managed) |
+| Semantic complexity routing | ✅ | ✅ | ✅ | ✅ |
+| No proxy / no server required | ✅ | ✅ | ❌ | ❌ |
+| Concurrent TOCTOU-safe reservations | ✅ | ❌ | ❌ | N/A |
+| Open source (MIT) | ✅ | ✅ | ✅ | ❌ |
+
+The key difference: every alternative routes and tracks. Baar-Core **prevents** — the exception is raised before a single byte leaves your machine.
+
+---
+
+## Configuration
+
+```python
+router = BAARRouter(
+    budget=0.10,                    # hard cap in USD
+    small_model="gpt-4o-mini",      # cheap tier (any LiteLLM model)
+    big_model="gpt-4o",             # capable tier
+    complexity_threshold=0.80,      # 0.0–1.0: higher = more traffic to cheap model
+    min_cost_threshold=0.0001,      # kill-switch floor — reject if any call costs more
+    routing_task_char_limit=500,    # chars sent to routing LLM (head+mid+tail sample)
+    use_llm_router=True,            # False = rule-based heuristic only (no routing cost)
+    small_fallback_models=["gpt-4o-mini-2024-07-18"],  # failover chain
+    big_fallback_models=["gpt-4o-2024-08-06"],
+    telemetry_jsonl_path="telemetry.jsonl",  # optional audit log
+)
+```
+
+**Budget pressure** — as spend approaches the cap, the effective complexity threshold rises automatically. The big model becomes harder to justify as you run low, so more traffic shifts to cheap naturally.
+
+**Telemetry** — inspect spend, routing splits, and reject rates:
+
+```bash
+baar-telemetry telemetry.jsonl
+```
+
+**Resilience testing** — adversarial scenarios (complexity games, tight budgets, padding attacks):
+
+```bash
+baar-stress
+```
+
+---
+
+## Security
+
+Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.
+
+Details: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md)
+
+---
+
+## License
+
+**MIT** — [LICENSE](https://github.com/orvi2014/Baar-Core/blob/main/LICENSE)

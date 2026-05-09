@@ -139,7 +139,6 @@ def derive_alpha_from_data(
     for t in sample:
         decision = calib_router._router.decide(
             task=t.task,
-            remaining_budget=calib_router.remaining,
             budget_utilization=calib_router._tracker.utilization,
         )
         model = decision.model

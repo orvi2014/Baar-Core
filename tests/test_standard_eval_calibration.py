@@ -21,7 +21,7 @@ def test_derive_alpha_from_data_percentile(monkeypatch):
     ]
 
     class FakeRouter:
-        def decide(self, task, remaining_budget, budget_utilization):
+        def decide(self, task, budget_utilization):
             return SimpleNamespace(model="small", tier=SimpleNamespace(value="small"))
 
     class FakeTracker:
