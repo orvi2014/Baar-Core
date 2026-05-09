@@ -499,14 +499,11 @@ class BAARRouter:
             step_num = self._step_counter
 
         try:
-            for i, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
                 attempted_models.append(candidate)
-                if i > 0:
-                    try:
-                        self._tracker.check_affordability(candidate, tc(candidate), eot)
-                    except BudgetExceeded as e:
-                        failover_errors.append(f"{candidate}: affordability failed ({e})")
-                        continue
+                # Do NOT re-check affordability here: we already have a reservation
+                # that covers this call. A redundant check against the already-reduced
+                # remaining would reject valid fallbacks at low budget (same fix as achat).
                 try:
                     response = _sync_completion_with_retry(
                         candidate, msgs, timeout=self._call_timeout
@@ -649,14 +646,9 @@ class BAARRouter:
             step_num = self._step_counter
 
         try:
-            for i, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
                 attempted_models.append(candidate)
-                if i > 0:
-                    try:
-                        self._tracker.check_affordability(candidate, tc(candidate), eot)
-                    except BudgetExceeded as e:
-                        failover_errors.append(f"{candidate}: affordability failed ({e})")
-                        continue
+                # Do NOT re-check affordability here: reservation already covers this call.
                 try:
                     response_stream = _sync_completion_with_retry(
                         candidate, msgs, stream=True, timeout=self._call_timeout
@@ -993,14 +985,9 @@ class BAARRouter:
         model_to_use_final = model_to_use
 
         try:
-            for i, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
                 attempted_models.append(candidate)
-                if i > 0:
-                    try:
-                        self._tracker.check_affordability(candidate, tc(candidate), eot)
-                    except BudgetExceeded as e:
-                        failover_errors.append(f"{candidate}: affordability failed ({e})")
-                        continue
+                # Do NOT re-check affordability here: reservation already covers this call.
                 try:
                     response_stream = await _async_completion_with_retry(
                         candidate, msgs, stream=True, timeout=self._call_timeout
