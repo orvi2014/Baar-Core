@@ -10,7 +10,7 @@ from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 from baar.core.stores import BudgetStore, MemoryBudgetStore, FileBudgetStore, SQLiteBudgetStore
 
-__version__ = "0.2.5"
+__version__ = "0.3.0"
 __all__ = [
     "BAARRouter",
     "token_counter",
