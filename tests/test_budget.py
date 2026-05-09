@@ -163,3 +163,109 @@ class TestSummary:
 
         assert tracker.utilization == pytest.approx(0.5)
         assert tracker.summary()["utilization_pct"] == pytest.approx(50.0)
+
+
+# ─────────────────────────────────────────────────────────
+# record_manual (streaming cost recording)
+# ─────────────────────────────────────────────────────────
+
+class TestRecordManual:
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    def test_record_manual_updates_spent(self, mock_cpt):
+        tracker = BudgetTracker(total_budget=0.10)
+        rec = tracker.record_manual("gpt-4o-mini", prompt_tokens=100, completion_tokens=50)
+        assert rec.prompt_tokens == 100
+        assert rec.completion_tokens == 50
+        assert rec.cost == pytest.approx(0.000001 + 0.000002)
+        assert tracker.spent == pytest.approx(rec.cost)
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    def test_record_manual_increments_step(self, mock_cpt):
+        tracker = BudgetTracker(total_budget=0.10)
+        assert tracker._step == 0
+        tracker.record_manual("gpt-4o-mini", 50, 25)
+        assert tracker._step == 1
+
+    @patch("baar.core.budget.cost_per_token", side_effect=Exception("no pricing"))
+    def test_record_manual_falls_back_to_zero_cost_on_error(self, mock_cpt):
+        tracker = BudgetTracker(total_budget=0.10)
+        rec = tracker.record_manual("unknown-model", 100, 50)
+        assert rec.cost == 0.0
+        # Still records the tokens
+        assert rec.prompt_tokens == 100
+        assert rec.completion_tokens == 50
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    def test_record_manual_appears_in_summary_records(self, mock_cpt):
+        tracker = BudgetTracker(total_budget=0.10)
+        tracker.record_manual("gpt-4o-mini", 60, 30)
+        summary = tracker.summary()
+        assert summary["steps"] == 1
+        assert len(summary["records"]) == 1
+        assert summary["records"][0]["model"] == "gpt-4o-mini"
+
+
+# ─────────────────────────────────────────────────────────
+# check_and_reserve — atomic budget reservation
+# ─────────────────────────────────────────────────────────
+
+class TestCheckAndReserve:
+    @patch("baar.core.budget.cost_per_token", return_value=(0.01, 0.02))
+    def test_passes_when_enough_budget(self, mock_cpt):
+        """check_and_reserve should succeed and not raise when budget is sufficient."""
+        tracker = BudgetTracker(total_budget=1.0)
+        # Should not raise
+        tracker.check_and_reserve(0.05)
+        # The reservation should be reflected in the spent amount
+        assert tracker.spent == pytest.approx(0.05)
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.01, 0.02))
+    def test_raises_budget_exceeded_when_would_exceed(self, mock_cpt):
+        """check_and_reserve should raise BudgetExceeded if amount > remaining."""
+        tracker = BudgetTracker(total_budget=0.10)
+        tracker._spent = 0.09  # Only $0.01 remaining
+
+        with pytest.raises(BudgetExceeded) as exc_info:
+            tracker.check_and_reserve(0.05)
+
+        assert exc_info.value.requested == pytest.approx(0.05)
+        assert exc_info.value.model == "(reservation)"
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.01, 0.02))
+    def test_store_not_modified_on_failure(self, mock_cpt):
+        """When check_and_reserve fails, the store must remain unchanged."""
+        tracker = BudgetTracker(total_budget=0.10)
+        tracker._spent = 0.09
+        spent_before = tracker.spent
+
+        try:
+            tracker.check_and_reserve(0.05)
+        except BudgetExceeded:
+            pass
+
+        assert tracker.spent == pytest.approx(spent_before)
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.01, 0.02))
+    def test_reservation_reflected_in_remaining(self, mock_cpt):
+        """After a successful check_and_reserve, remaining decreases by the amount."""
+        tracker = BudgetTracker(total_budget=1.0)
+        tracker.check_and_reserve(0.30)
+        assert tracker.remaining == pytest.approx(0.70)
+        assert tracker.spent == pytest.approx(0.30)
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.01, 0.02))
+    def test_sequential_reservations_accumulate(self, mock_cpt):
+        """Multiple successful reservations are cumulative."""
+        tracker = BudgetTracker(total_budget=1.0)
+        tracker.check_and_reserve(0.10)
+        tracker.check_and_reserve(0.20)
+        assert tracker.spent == pytest.approx(0.30)
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.01, 0.02))
+    def test_exactly_at_budget_succeeds(self, mock_cpt):
+        """Reserving exactly the remaining budget should succeed."""
+        tracker = BudgetTracker(total_budget=0.10)
+        tracker._spent = 0.05
+        # Should not raise
+        tracker.check_and_reserve(0.05)
+        assert tracker.spent == pytest.approx(0.10)

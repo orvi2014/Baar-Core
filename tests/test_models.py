@@ -125,7 +125,8 @@ class TestRoutingLogAggregation:
 # ─────────────────────────────────────────────────────────
 
 class TestSavingsCalculation:
-    def test_all_small_shows_positive_savings(self):
+    @patch("baar.core.models._cached_big_model_cost", return_value=0.03)
+    def test_all_small_shows_positive_savings(self, mock_cached):
         """If we routed everything to SMALL, savings vs always-big should be positive."""
         log = RoutingLog(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
         log.add(make_step(tier=ModelTier.SMALL, cost=0.001, cumulative=0.001))
@@ -249,3 +250,32 @@ class TestSummaryStructure:
         captured = capsys.readouterr()
         assert "BAAR ROUTING REPORT" in captured.out
         assert "Saved" in captured.out
+
+
+# ─────────────────────────────────────────────────────────
+# RoutingLog max_steps eviction
+# ─────────────────────────────────────────────────────────
+
+class TestRoutingLogMaxSteps:
+    def test_add_beyond_max_evicts_oldest(self):
+        log = RoutingLog(
+            budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o", max_steps=3
+        )
+        for i in range(5):
+            log.add(make_step(cost=0.001, cumulative=0.001 * (i + 1)))
+        assert len(log.steps) == 3
+
+    def test_no_max_steps_keeps_all(self):
+        log = RoutingLog(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
+        for i in range(5):
+            log.add(make_step(cost=0.001, cumulative=0.001 * (i + 1)))
+        assert len(log.steps) == 5
+
+    def test_max_steps_one_keeps_only_most_recent(self):
+        log = RoutingLog(
+            budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o", max_steps=1
+        )
+        log.add(make_step(cost=0.001, cumulative=0.001))
+        log.add(make_step(cost=0.002, cumulative=0.002))
+        assert len(log.steps) == 1
+        assert log.steps[0].cost == pytest.approx(0.002)  # newest kept

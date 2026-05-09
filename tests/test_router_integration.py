@@ -491,32 +491,27 @@ class TestFailoverAndTelemetry:
 
     @patch("baar.core.budget.completion_cost", return_value=0.000025)
     @patch("baar.router.token_counter", return_value=50)
-    def test_failover_skips_unaffordable_candidate_then_succeeds(self, mock_tc, mock_cc):
-        def cost_side_effect(model, prompt_tokens, completion_tokens):
-            if model == "fallback-small-1":
-                return (0.2, 0.2)  # clearly unaffordable for a $0.10 budget
-            return (0.000001, 0.000002)
-
+    def test_failover_uses_first_available_candidate(self, mock_tc, mock_cc):
+        # Primary fails; fallback-small-1 should be tried immediately without a
+        # redundant affordability re-check (reservation already covers the slot).
         def completion_side_effect(model, messages, **kwargs):
             if model == "gpt-4o-mini":
                 raise RuntimeError("primary small down")
             return mock_litellm_response("ok", model=model)
 
-        with patch("baar.core.budget.cost_per_token", side_effect=cost_side_effect):
-            with patch("baar.router.litellm.completion", side_effect=completion_side_effect):
-                router = BAARRouter(
-                    budget=0.10,
-                    use_llm_router=False,
-                    small_model="gpt-4o-mini",
-                    small_fallback_models=["fallback-small-1", "fallback-small-2"],
-                )
-                router.chat("hello")
+        with patch("baar.router.litellm.completion", side_effect=completion_side_effect):
+            router = BAARRouter(
+                budget=0.10,
+                use_llm_router=False,
+                small_model="gpt-4o-mini",
+                small_fallback_models=["fallback-small-1", "fallback-small-2"],
+            )
+            router.chat("hello")
 
         step = router.log.steps[-1]
-        assert step.decision.model == "fallback-small-2"
-        assert step.attempted_models == ["gpt-4o-mini", "fallback-small-1", "fallback-small-2"]
-        assert step.failover_count == 2
-        assert any("affordability failed" in e for e in step.failover_errors)
+        assert step.decision.model == "fallback-small-1"
+        assert step.attempted_models == ["gpt-4o-mini", "fallback-small-1"]
+        assert step.failover_count == 1
 
     @patch("baar.core.budget.completion_cost", return_value=0.000025)
     @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
@@ -560,3 +555,227 @@ class TestFailoverAndTelemetry:
         assert lines[1]["tier"] in ("small", "big")
         assert "timestamp_unix_ms" in lines[0]
         assert "router_budget_usd" in lines[0]
+
+
+# ─────────────────────────────────────────────────────────
+# Multi-turn conversation context
+# ─────────────────────────────────────────────────────────
+
+class TestMultiTurnMessages:
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_chat_with_messages_passes_history_to_llm(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        mock_completion.return_value = mock_litellm_response("follow-up answer")
+        router = BAARRouter(budget=0.10, use_llm_router=False)
+        history = [
+            {"role": "user", "content": "What is Python?"},
+            {"role": "assistant", "content": "Python is a programming language."},
+            {"role": "user", "content": "What are its main uses?"},
+        ]
+        result = router.chat("What are its main uses?", messages=history)
+        assert isinstance(result, str)
+        # Verify the LLM received the full history
+        call_messages = mock_completion.call_args.kwargs["messages"]
+        assert any(m["role"] == "assistant" for m in call_messages)
+        assert len(call_messages) >= 3
+
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_chat_with_messages_prepends_system_prompt(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(budget=0.10, use_llm_router=False, system_prompt="Be concise.")
+        history = [{"role": "user", "content": "hello"}]
+        router.chat("hello", messages=history)
+        call_messages = mock_completion.call_args.kwargs["messages"]
+        assert call_messages[0]["role"] == "system"
+        assert call_messages[0]["content"] == "Be concise."
+
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_chat_with_messages_does_not_duplicate_system_prompt(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(budget=0.10, use_llm_router=False, system_prompt="Be concise.")
+        history = [
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": "hello"},
+        ]
+        router.chat("hello", messages=history)
+        call_messages = mock_completion.call_args.kwargs["messages"]
+        assert sum(1 for m in call_messages if m["role"] == "system") == 1
+
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_chat_without_messages_builds_single_turn(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(budget=0.10, use_llm_router=False)
+        router.chat("simple question")
+        call_messages = mock_completion.call_args.kwargs["messages"]
+        user_msgs = [m for m in call_messages if m["role"] == "user"]
+        assert len(user_msgs) == 1
+        assert user_msgs[0]["content"] == "simple question"
+
+
+# ─────────────────────────────────────────────────────────
+# RoutingLog max_steps eviction
+# ─────────────────────────────────────────────────────────
+
+class TestMaxLogSteps:
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000001)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.0000001, 0.0000002))
+    @patch("baar.router.token_counter", return_value=10)
+    def test_max_log_steps_evicts_oldest(self, mock_tc, mock_cpt, mock_cc, mock_completion):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(budget=1.0, use_llm_router=False, max_log_steps=3)
+        for i in range(5):
+            router.chat(f"task {i}")
+        # Only 3 most recent steps should be kept
+        assert len(router.log.steps) == 3
+
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000001)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.0000001, 0.0000002))
+    @patch("baar.router.token_counter", return_value=10)
+    def test_no_max_log_steps_keeps_all(self, mock_tc, mock_cpt, mock_cc, mock_completion):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(budget=1.0, use_llm_router=False)
+        for i in range(5):
+            router.chat(f"task {i}")
+        assert len(router.log.steps) == 5
+
+
+# ─────────────────────────────────────────────────────────
+# value_fn UserWarning for suspicious scale
+# ─────────────────────────────────────────────────────────
+
+class TestValueFnWarning:
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_value_fn_warns_when_value_is_suspiciously_large(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(
+            budget=0.10,
+            use_llm_router=False,
+            value_fn=lambda _: 150.0,  # looks like a 0-100 score, not USD
+        )
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            try:
+                router.chat("hello")
+            except Exception:
+                pass
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warns) >= 1
+        assert "150" in str(user_warns[0].message)
+
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_value_fn_no_warning_for_usd_scale_value(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        mock_completion.return_value = mock_litellm_response("ok")
+        router = BAARRouter(
+            budget=0.10,
+            use_llm_router=False,
+            value_fn=lambda _: 0.005,  # sensible USD value
+        )
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            router.chat("hello")
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warns) == 0
+
+
+# ─────────────────────────────────────────────────────────
+# Injectable shared routing cache (BAARRouter level)
+# ─────────────────────────────────────────────────────────
+
+class TestSharedRoutingCacheIntegration:
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.000025)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_shared_cache_across_router_instances(
+        self, mock_tc, mock_cpt, mock_cc, mock_completion
+    ):
+        def side_effect(model, messages, **kwargs):
+            r = MagicMock()
+            r.usage = MagicMock(prompt_tokens=10, completion_tokens=10)
+            r.choices = [MagicMock()]
+            body = messages[-1]["content"] if messages else ""
+            if "task complexity classifier" in body.lower():
+                r.choices[0].message.content = '{"complexity": 0.2, "reason": "simple"}'
+            else:
+                r.choices[0].message.content = "done"
+            return r
+
+        mock_completion.side_effect = side_effect
+        shared = {}
+        r1 = BAARRouter(budget=0.10, use_llm_router=True, routing_cache=shared)
+        r2 = BAARRouter(budget=0.10, use_llm_router=True, routing_cache=shared)
+
+        r1.chat("ping")
+        r2.chat("ping")
+
+        # Second instance should have gotten a cache hit
+        assert r2.log.steps[0].decision.routing_cache_hit is True
+
+
+# ─────────────────────────────────────────────────────────
+# Streaming (stream_chat)
+# ─────────────────────────────────────────────────────────
+
+class TestStreamChat:
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_stream_chat_yields_chunks_and_logs_step(self, mock_tc, mock_cpt):
+        def make_chunk(text):
+            c = MagicMock()
+            c.choices[0].delta.content = text
+            return c
+
+        chunks = [make_chunk("Hello"), make_chunk(" world"), make_chunk("!")]
+        with patch("baar.router.litellm.completion", return_value=iter(chunks)):
+            with patch("baar.core.budget.completion_cost", return_value=0.000025):
+                router = BAARRouter(budget=0.10, use_llm_router=False)
+                collected = list(router.stream_chat("hi"))
+
+        assert collected == ["Hello", " world", "!"]
+        assert len(router.log.steps) == 1
+        assert router.log.steps[0].response_text == "Hello world!"
+
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+    @patch("baar.router.token_counter", return_value=50)
+    def test_stream_chat_cancels_reservation_on_error(self, mock_tc, mock_cpt):
+        with patch("baar.router.litellm.completion", side_effect=RuntimeError("stream failed")):
+            with patch("baar.core.budget.completion_cost", return_value=0.000025):
+                router = BAARRouter(budget=0.10, use_llm_router=False)
+                initial_remaining = router.remaining
+                with pytest.raises(RuntimeError):
+                    list(router.stream_chat("hi"))
+                # Reservation must be cleaned up — remaining should be unchanged
+                assert router.remaining == pytest.approx(initial_remaining)

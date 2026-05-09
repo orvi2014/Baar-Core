@@ -3,9 +3,30 @@ Data models for step results and routing logs.
 Every decision is recorded — this is what devs show in benchmarks.
 """
 
+import functools
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, List
+import litellm
 from baar.core.router import RoutingDecision, ModelTier
+
+
+@functools.lru_cache(maxsize=512)
+def _cached_big_model_cost(big_model: str, prompt_tokens: int, completion_tokens: int) -> Optional[float]:
+    """
+    Memoized pricing lookup for savings calculation.
+    savings_vs_always_big() calls this once per unique (model, token_pair) tuple
+    instead of making one live lookup per step — O(unique token pairs) not O(steps).
+    """
+    try:
+        in_c, out_c = litellm.cost_per_token(
+            model=big_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+        return float(in_c + out_c)
+    except Exception:
+        return None
 
 
 @dataclass
@@ -71,13 +92,24 @@ class RoutingLog:
     small_model: str
     big_model: str
     steps: List[StepResult] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    max_steps: Optional[int] = None  # cap in-memory log size; oldest steps are evicted
+
+    def __post_init__(self) -> None:
+        if self.max_steps is not None:
+            self.steps = deque(self.steps, maxlen=self.max_steps)
+        # Accumulate total cost independently of the deque so that evicted steps
+        # are not lost from the running total when max_steps is set.
+        self._total_cost_all: float = sum(s.cost for s in self.steps)
 
     def add(self, step: StepResult) -> None:
+        self._total_cost_all += step.cost
         self.steps.append(step)
+        # deque with maxlen auto-evicts oldest; list is unbounded
 
     @property
     def total_cost(self) -> float:
-        return sum(s.cost for s in self.steps)
+        return self._total_cost_all
 
     @property
     def total_steps(self) -> int:
@@ -105,39 +137,44 @@ class RoutingLog:
 
     @property
     def always_big_cost(self) -> float:
-        """What this would have cost if we used big model for every step."""
-        return sum(
-            s.cost * (s.decision.complexity_score / max(0.01, s.decision.complexity_score))
-            if s.decision.tier == ModelTier.SMALL
-            else s.cost
-            if s.decision.tier == ModelTier.BIG
-            else 0.0
-            for s in self.steps
-        )
+        """What this session would have cost using big model for every step."""
+        total = 0.0
+        for s in self.steps:
+            if s.decision.tier == ModelTier.BIG:
+                total += s.cost
+            elif s.decision.tier == ModelTier.SMALL:
+                big_cost = _cached_big_model_cost(
+                    self.big_model, s.prompt_tokens, s.completion_tokens
+                )
+                total += big_cost if big_cost is not None else s.cost
+        return total
 
     def savings_vs_always_big(self) -> dict:
         """
-        Calculate savings vs naive always-big strategy.
-        This is the benchmark number that matters.
+        Calculate savings vs naive always-big strategy using real LiteLLM
+        pricing — no hardcoded multipliers.  For each SMALL call, we look up
+        what the same prompt+completion tokens would have cost on the big model.
         """
-        # Estimate always-big cost: use ratio of big/small pricing
-        # gpt-4o is ~15x more expensive than gpt-4o-mini per token
-        estimated_always_big = sum(
-            s.cost * 15
-            if s.decision.tier == ModelTier.SMALL
-            else s.cost
-            if s.decision.tier == ModelTier.BIG
-            else 0.0
-            for s in self.steps
-        )
-        saved = estimated_always_big - self.total_cost
-        pct = (saved / estimated_always_big * 100) if estimated_always_big > 0 else 0
+        always_big_cost = 0.0
+        for s in self.steps:
+            if s.decision.tier == ModelTier.BIG:
+                always_big_cost += s.cost
+            elif s.decision.tier == ModelTier.SMALL:
+                cost = _cached_big_model_cost(
+                    self.big_model, s.prompt_tokens, s.completion_tokens
+                )
+                # Pricing unavailable — fall back to actual cost rather than fabricate.
+                always_big_cost += cost if cost is not None else s.cost
+            # REJECT steps contributed $0 to both sides — intentionally skipped.
+
+        saved = always_big_cost - self.total_cost
+        pct = (saved / always_big_cost * 100) if always_big_cost > 0 else 0.0
 
         return {
             "baar_cost": round(self.total_cost, 6),
-            "estimated_always_big_cost": round(estimated_always_big, 6),
-            "saved_usd": round(saved, 6),
-            "savings_pct": round(pct, 1),
+            "estimated_always_big_cost": round(always_big_cost, 6),
+            "saved_usd": round(max(0.0, saved), 6),
+            "savings_pct": round(max(0.0, pct), 1),
         }
 
     def summary(self) -> dict:
@@ -159,6 +196,7 @@ class RoutingLog:
             ),
             "savings_vs_always_big": savings,
             "steps": [s.to_dict() for s in self.steps],
+            "errors": list(self.errors),
         }
 
     def print_report(self) -> None:
@@ -196,4 +234,9 @@ class RoutingLog:
                 f"${step['cost_usd']:>9.6f}  "
                 f"{step['routing_reason'][:30]}{forced}{cached}"
             )
+        if self.errors:
+            print("─" * 60)
+            print(f"  Errors ({len(self.errors)}):")
+            for err in self.errors:
+                print(f"    {err}")
         print("═" * 60 + "\n")
