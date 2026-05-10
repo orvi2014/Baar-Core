@@ -6,7 +6,7 @@ Every decision is recorded — this is what devs show in benchmarks.
 import functools
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Union
 import litellm
 from baar.core.router import RoutingDecision, ModelTier
 
@@ -91,7 +91,7 @@ class RoutingLog:
     budget: float
     small_model: str
     big_model: str
-    steps: List[StepResult] = field(default_factory=list)
+    steps: Union[List[StepResult], "deque[StepResult]"] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     max_steps: Optional[int] = None  # cap in-memory log size; oldest steps are evicted
 
@@ -155,24 +155,12 @@ class RoutingLog:
         pricing — no hardcoded multipliers.  For each SMALL call, we look up
         what the same prompt+completion tokens would have cost on the big model.
         """
-        always_big_cost = 0.0
-        for s in self.steps:
-            if s.decision.tier == ModelTier.BIG:
-                always_big_cost += s.cost
-            elif s.decision.tier == ModelTier.SMALL:
-                cost = _cached_big_model_cost(
-                    self.big_model, s.prompt_tokens, s.completion_tokens
-                )
-                # Pricing unavailable — fall back to actual cost rather than fabricate.
-                always_big_cost += cost if cost is not None else s.cost
-            # REJECT steps contributed $0 to both sides — intentionally skipped.
-
-        saved = always_big_cost - self.total_cost
-        pct = (saved / always_big_cost * 100) if always_big_cost > 0 else 0.0
-
+        always_big = self.always_big_cost
+        saved = always_big - self.total_cost
+        pct = (saved / always_big * 100) if always_big > 0 else 0.0
         return {
             "baar_cost": round(self.total_cost, 6),
-            "estimated_always_big_cost": round(always_big_cost, 6),
+            "estimated_always_big_cost": round(always_big, 6),
             "saved_usd": round(max(0.0, saved), 6),
             "savings_pct": round(max(0.0, pct), 1),
         }
@@ -183,7 +171,7 @@ class RoutingLog:
         return {
             "budget_usd": self.budget,
             "spent_usd": round(self.total_cost, 8),
-            "remaining_usd": round(self.budget - self.total_cost, 8),
+            "remaining_usd": round(max(0.0, self.budget - self.total_cost), 8),
             "utilization_pct": round(self.total_cost / self.budget * 100, 2) if self.budget > 0 else 0,
             "total_steps": self.total_steps,
             "small_model_calls": self.small_calls,

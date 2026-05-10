@@ -3,8 +3,9 @@ Budget tracker — real token-based cost using LiteLLM pricing.
 This is the financial source of truth for the entire system.
 """
 
+from collections import deque
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 from litellm import completion_cost, cost_per_token
 
 from baar.core.stores import BudgetStore, MemoryBudgetStore
@@ -53,10 +54,11 @@ class BudgetTracker:
         self,
         total_budget: float,
         store: Optional[BudgetStore] = None,
+        max_records: Optional[int] = None,
     ) -> None:
         self.total_budget = total_budget
         self._store: BudgetStore = store if store is not None else MemoryBudgetStore()
-        self._records: list = []
+        self._records: Union[list, deque] = deque(maxlen=max_records) if max_records is not None else []
         self._step: int = 0
 
     # _spent is kept as a property so existing tests that do
@@ -98,7 +100,9 @@ class BudgetTracker:
         except Exception:
             usage = getattr(response, "usage", None)
             if usage:
-                model = response.model or "gpt-4o-mini"
+                model = getattr(response, "model", None)
+                if not model:
+                    return 0.0
                 try:
                     in_cost, out_cost = cost_per_token(
                         model=model,
@@ -124,7 +128,7 @@ class BudgetTracker:
             )
             return float(in_cost + out_cost)
         except Exception:
-            return 0.0
+            return float("inf")
 
     def check_affordability(self, model: str, prompt_tokens: int, completion_tokens: int = 500) -> None:
         """
@@ -158,8 +162,9 @@ class BudgetTracker:
         Pre-deduct estimated cost so concurrent async calls cannot both pass
         the affordability check and together overshoot the budget (TOCTOU fix).
         Must be paired with a call to cancel_reservation() after recording actual cost.
+        Prefer check_and_reserve() for new code — it is atomic across processes.
         """
-        self._store.add_spent(amount)
+        self.check_and_reserve(amount)
 
     def cancel_reservation(self, amount: float) -> None:
         """

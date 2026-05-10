@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,9 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         total_spend += cost
 
         model = str(row.get("model", "")).strip()
+        tier = str(row.get("tier", "")).lower()
+        if not model and tier != "reject":
+            model = "(unknown)"
         if model:
             model_calls[model] += 1
             model_spend[model] += cost
@@ -65,11 +69,14 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for i, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
-            rows.append(json.loads(line))
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                warnings.warn(f"{path}:{i}: skipping malformed JSONL line", RuntimeWarning, stacklevel=2)
     return rows
 
 

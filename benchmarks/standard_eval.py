@@ -22,15 +22,11 @@ from benchmarks.evaluators import evaluate_mmlu, evaluate_gsm8k, evaluate_code
 
 
 def _is_routing_prompt(task_content: str) -> bool:
-    lowered = task_content.lower()
-    return (
-        "task complexity classifier for an ai routing system" in lowered
-        and "task to classify:" in lowered
-    )
+    return task_content.lower().startswith("classify this task:")
 
 
 def _extract_routing_task(task_content: str) -> str:
-    marker = "Task to classify:"
+    marker = "Classify this task:\n\n"
     if marker in task_content:
         return task_content.split(marker, 1)[1].strip()
     return task_content
@@ -333,6 +329,7 @@ def main():
                         reason="forced-big",
                         forced_by_budget=False,
                         routing_cache_hit=False,
+                        estimated_output_tokens=500,
                     )
                 else:
                     router._router.decide = lambda *args, **kwargs: MagicMock(
@@ -343,6 +340,7 @@ def main():
                         reason="forced-small",
                         forced_by_budget=False,
                         routing_cache_hit=False,
+                        estimated_output_tokens=500,
                     )
 
             correct = 0
@@ -408,7 +406,9 @@ def main():
                         try:
                             response = router.chat(t.task)
                             if ds_name == "humaneval":
-                                if evaluate_code(response, t.task, t.ground_truth):
+                                if evaluate_code(response, t.task, t.ground_truth,
+                                                 test_code=t.metadata.get("test", ""),
+                                                 entry_point=t.metadata.get("entry_point", "")):
                                     correct += 1
                             elif eval_fn(response, t.ground_truth):
                                 correct += 1

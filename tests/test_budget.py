@@ -128,12 +128,12 @@ class TestBudgetConstrainedDecoding:
         assert exc.model == "gpt-4o"
 
     @patch("baar.core.budget.cost_per_token", side_effect=Exception("pricing failure"))
-    def test_check_affordability_passes_on_pricing_failure(self, mock_cpt):
-        """If we can't estimate cost, we allow the call (fail open, not closed)."""
+    def test_check_affordability_raises_on_pricing_failure(self, mock_cpt):
+        """Unknown-model pricing failure → fail closed (raises BudgetExceeded)."""
         tracker = BudgetTracker(total_budget=0.001)
         tracker._spent = 0.0009
-        # Should not raise even with near-zero budget when cost estimation fails
-        tracker.check_affordability("gpt-4o", prompt_tokens=1000)
+        with pytest.raises(BudgetExceeded):
+            tracker.check_affordability("gpt-4o", prompt_tokens=1000)
 
 
 # ─────────────────────────────────────────────────────────

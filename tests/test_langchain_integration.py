@@ -173,12 +173,13 @@ class TestRunIdTracking:
                 LLMResult(generations=[], llm_output={}), run_id=run_id
             )
 
-        threads = [
-            threading.Thread(target=run_call, args=(f"model-{i}",))
-            for i in range(10)
-        ]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        with patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000001)):
+            threads = [
+                threading.Thread(target=run_call, args=(f"model-{i}",))
+                for i in range(10)
+            ]
+            for t in threads: t.start()
+            for t in threads: t.join()
 
         assert errors == [], f"Race conditions detected: {errors}"
 

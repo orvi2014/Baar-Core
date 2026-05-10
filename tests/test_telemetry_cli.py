@@ -50,13 +50,15 @@ def test_load_jsonl_reads_records(tmp_path):
     assert loaded == rows
 
 
-def test_load_jsonl_raises_on_malformed_line(tmp_path):
+def test_load_jsonl_skips_malformed_line(tmp_path):
     p = tmp_path / "telemetry.jsonl"
     with p.open("w", encoding="utf-8") as f:
         f.write('{"tier":"small"}\n')
         f.write("not-json\n")
-    with pytest.raises(json.JSONDecodeError):
-        load_jsonl(p)
+    with pytest.warns(RuntimeWarning, match="malformed"):
+        loaded = load_jsonl(p)
+    assert len(loaded) == 1
+    assert loaded[0]["tier"] == "small"
 
 
 def test_cli_main_prints_summary(capsys, tmp_path, monkeypatch):
