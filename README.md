@@ -143,28 +143,62 @@ Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/provide
 
 ---
 
-## Persistent budgets (survive process restarts)
+## Multi-tenant & per-user budgets
 
-By default, budgets are in-memory. For production, plug in a persistent store:
+Give each user their own hard quota — enforced locally, persisted across restarts, no proxy or external service required.
 
 ```python
-from baar import BAARRouter
-from baar.core.stores import SQLiteBudgetStore, FileBudgetStore
+from baar import BAARRouter, BudgetExhausted
+from baar.core.stores import SQLiteBudgetStore
 
-# Per-user quota in a SQLite database — thread-safe, no extra deps
-router = BAARRouter(
-    budget=0.10,
-    store=SQLiteBudgetStore("budgets.db", namespace="user_alice"),
-)
+def router_for(user_id: str) -> BAARRouter:
+    return BAARRouter(
+        budget=0.10,
+        store=SQLiteBudgetStore("budgets.db", namespace=user_id),
+    )
 
-# Restarts don't reset the budget — spend is loaded from disk
-router.chat("Hello")  # deducted from Alice's persistent $0.10
+# Alice and Bob share one database file — budgets are fully isolated
+alice = router_for("alice")
+bob   = router_for("bob")
 
-# JSON file — good for single-process scripts
-router = BAARRouter(
-    budget=1.00,
-    store=FileBudgetStore("my_budget.json"),
-)
+alice.chat("Summarise this document")  # deducted from Alice's $0.10 only
+bob.chat("Translate to French")        # Bob's quota untouched
+```
+
+Namespace isolation is enforced at the store level — one user exhausting their quota cannot affect another's. Concurrent writes across threads **and across OS processes** (gunicorn/uvicorn workers) are safe: `SQLiteBudgetStore` uses WAL mode and an exclusive transaction for the check-and-reserve step, eliminating the TOCTOU race that affects most multi-tenant budget implementations.
+
+**SaaS pattern — return HTTP 402 when a user's quota is exhausted:**
+
+```python
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    try:
+        reply = await router_for(req.user_id).achat(req.message)
+    except BudgetExhausted as e:
+        raise HTTPException(status_code=402, detail={
+            "error": "quota_exhausted",
+            "remaining_usd": e.remaining,
+        })
+    return {"reply": reply}
+```
+
+No billing service. No proxy. One SQLite file. Full example: [fastapi_per_user_budget.py](examples/fastapi_per_user_budget.py)
+
+**Time-windowed quotas** — scope budgets to a day or month by encoding the period in the namespace:
+
+```python
+import datetime
+period = datetime.date.today().strftime("%Y-%m")   # "2026-05"
+store  = SQLiteBudgetStore("budgets.db", namespace=f"user:{user_id}:{period}")
+# quota resets automatically next month — no cron job needed
+```
+
+**Single-process scripts** — JSON file store, no SQLite needed:
+
+```python
+from baar.core.stores import FileBudgetStore
+
+router = BAARRouter(budget=1.00, store=FileBudgetStore("my_budget.json"))
 ```
 
 ---
@@ -220,10 +254,10 @@ Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --
 | Hard local kill-switch (zero network calls) | ✅ | ❌ | ❌ | ❌ |
 | Prevents Denial-of-Wallet (OWASP LLM10:2025) | ✅ | ❌ | ❌ | ❌ |
 | Works fully offline | ✅ | ❌ | ❌ | ❌ |
-| Per-user persistent budgets | ✅ SQLite/File | ❌ | Partial | ✅ (managed) |
+| Per-user namespaced budgets (no proxy) | ✅ SQLite/File | ❌ | ❌ (proxy required) | ❌ (cloud only) |
+| Cross-process TOCTOU-safe reservations | ✅ | ❌ | ❌ | N/A |
 | Semantic complexity routing | ✅ | ✅ | ✅ | ✅ |
 | No proxy / no server required | ✅ | ✅ | ❌ | ❌ |
-| Concurrent TOCTOU-safe reservations | ✅ | ❌ | ❌ | N/A |
 | Open source (MIT) | ✅ | ✅ | ✅ | ❌ |
 
 The key difference: every alternative routes and tracks. Baar-Core **prevents** — the exception is raised before a single byte leaves your machine.
