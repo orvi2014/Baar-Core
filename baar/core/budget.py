@@ -3,6 +3,7 @@ Budget tracker — real token-based cost using LiteLLM pricing.
 This is the financial source of truth for the entire system.
 """
 
+import warnings
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional, Union
@@ -114,6 +115,13 @@ class BudgetTracker:
                     pass
             return 0.0
 
+    # Fallback estimate used when LiteLLM has no pricing data for a model.
+    # $0.0001 ≈ a short gpt-4o-mini call — low enough not to block normal budgets
+    # (e.g. $0.05) but nonzero so the kill-switch still fires at micro-budgets
+    # (e.g. $0.00005). Register real pricing via litellm.register_model() to
+    # replace this fallback with accurate per-model data.
+    _UNKNOWN_MODEL_FALLBACK_COST = 0.0001
+
     def estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int = 500) -> float:
         """
         Pre-flight cost estimate before making a call.
@@ -128,7 +136,15 @@ class BudgetTracker:
             )
             return float(in_cost + out_cost)
         except Exception:
-            return float("inf")
+            warnings.warn(
+                f"BudgetTracker: no pricing data for model '{model}'. "
+                f"Using ${self._UNKNOWN_MODEL_FALLBACK_COST} conservative estimate. "
+                "For accurate tracking, register real pricing with "
+                "litellm.register_model() before using BAARRouter.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return self._UNKNOWN_MODEL_FALLBACK_COST
 
     def check_affordability(self, model: str, prompt_tokens: int, completion_tokens: int = 500) -> None:
         """

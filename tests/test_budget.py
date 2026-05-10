@@ -127,13 +127,35 @@ class TestBudgetConstrainedDecoding:
         assert exc.remaining == 0.01
         assert exc.model == "gpt-4o"
 
-    @patch("baar.core.budget.cost_per_token", side_effect=Exception("pricing failure"))
-    def test_check_affordability_raises_on_pricing_failure(self, mock_cpt):
-        """Unknown-model pricing failure → fail closed (raises BudgetExceeded)."""
-        tracker = BudgetTracker(total_budget=0.001)
-        tracker._spent = 0.0009
-        with pytest.raises(BudgetExceeded):
-            tracker.check_affordability("gpt-4o", prompt_tokens=1000)
+    @patch("baar.core.budget.cost_per_token", side_effect=Exception("no pricing"))
+    def test_estimate_cost_returns_fallback_and_warns_on_unknown_model(self, mock_cpt):
+        """Unknown model → conservative fallback cost + UserWarning (not inf)."""
+        tracker = BudgetTracker(total_budget=0.10)
+        import pytest
+        with pytest.warns(UserWarning, match="no pricing data for model"):
+            cost = tracker.estimate_cost("unknown-model", prompt_tokens=100)
+        assert cost == BudgetTracker._UNKNOWN_MODEL_FALLBACK_COST
+        assert cost != float("inf")
+
+    @patch("baar.core.budget.cost_per_token", side_effect=Exception("no pricing"))
+    def test_check_affordability_raises_when_fallback_exceeds_remaining(self, mock_cpt):
+        """Fallback estimate > remaining → check_affordability still raises (micro-budget)."""
+        tracker = BudgetTracker(total_budget=0.00005)
+        # remaining == 0.00005 < fallback 0.0001 → must raise
+        import pytest, warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(BudgetExceeded):
+                tracker.check_affordability("unknown-model", prompt_tokens=100)
+
+    @patch("baar.core.budget.cost_per_token", side_effect=Exception("no pricing"))
+    def test_check_affordability_passes_when_fallback_fits_budget(self, mock_cpt):
+        """Fallback estimate < remaining → unknown model allowed through (normal budget)."""
+        tracker = BudgetTracker(total_budget=0.05)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tracker.check_affordability("unknown-model", prompt_tokens=100)  # must not raise
 
 
 # ─────────────────────────────────────────────────────────
