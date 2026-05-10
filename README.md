@@ -131,10 +131,57 @@ Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/provide
 
 ---
 
+## LangChain & LangGraph integration
+
+```bash
+pip install baar-core[langchain]
+```
+
+**Pattern 1 — add a kill-switch to an existing chain** (zero refactoring):
+
+```python
+from baar import BAARRouter
+from baar.integrations.langchain import BaarCallbackHandler
+from langchain_openai import ChatOpenAI
+
+router  = BAARRouter(budget=0.05)
+handler = BaarCallbackHandler(router)
+
+llm   = ChatOpenAI(model="gpt-4o", callbacks=[handler])
+chain = prompt | llm | StrOutputParser()
+# BudgetExhausted is raised before the API call when budget is too low
+```
+
+**Pattern 2 — BaarChatModel as a drop-in ChatModel** (full routing + downgrade):
+
+```python
+from baar.integrations.langchain import BaarChatModel
+
+router = BAARRouter(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
+llm    = BaarChatModel(router=router)
+
+chain = prompt | llm | StrOutputParser()   # works anywhere ChatOpenAI would
+```
+
+**Pattern 3 — LangGraph agent with budget protection**:
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+agent = create_react_agent(model=llm, tools=[...])
+# every tool-call iteration is budget-checked before the LLM is invoked
+# BudgetExhausted stops the loop locally — no dangling API calls
+```
+
+Full example: [langchain_guardrail.py](examples/langchain_guardrail.py)
+
+---
+
 ## Real-world examples
 
 | Example | Use case |
 |---|---|
+| [langchain_guardrail.py](examples/langchain_guardrail.py) | LangChain callback handler, BaarChatModel, LangGraph agent |
 | [fastapi_per_user_budget.py](examples/fastapi_per_user_budget.py) | SaaS: per-user $0.10 quota with SQLite persistence |
 | [agent_loop.py](examples/agent_loop.py) | Autonomous agent loop with graceful budget stop |
 | [streaming.py](examples/streaming.py) | Streaming responses with live budget tracking |
