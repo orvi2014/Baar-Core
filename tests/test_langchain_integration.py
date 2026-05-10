@@ -135,7 +135,13 @@ class TestRunIdTracking:
         )
         assert run_id in handler._pending_models
 
-        handler.on_llm_end(LLMResult(generations=[], llm_output={}), run_id=run_id)
+        handler.on_llm_end(
+            LLMResult(
+                generations=[],
+                llm_output={"token_usage": {"prompt_tokens": 5, "completion_tokens": 5}},
+            ),
+            run_id=run_id,
+        )
         assert run_id not in handler._pending_models
 
     def test_on_llm_error_clears_run_id(self):
@@ -170,7 +176,11 @@ class TestRunIdTracking:
             if recorded != model_name:
                 errors.append(f"expected {model_name}, got {recorded}")
             handler.on_llm_end(
-                LLMResult(generations=[], llm_output={}), run_id=run_id
+                LLMResult(
+                    generations=[],
+                    llm_output={"token_usage": {"prompt_tokens": 5, "completion_tokens": 5}},
+                ),
+                run_id=run_id,
             )
 
         with patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000001)):
@@ -188,10 +198,10 @@ class TestRunIdTracking:
         handler = BaarCallbackHandler(router)
         run_id = make_run_id()
 
+        before = router.spent  # capture before preflight reservation
         handler.on_llm_start(
             {"kwargs": {"model_name": "gpt-4o-mini"}}, ["prompt"], run_id=run_id
         )
-        before = router.spent
         handler.on_llm_end(
             LLMResult(
                 generations=[],
@@ -199,19 +209,69 @@ class TestRunIdTracking:
             ),
             run_id=run_id,
         )
+        # Net spend after cancel_reservation + record_manual must be positive.
         assert router.spent > before
 
-    def test_on_llm_end_noop_without_usage(self):
+    def test_preflight_reserves_atomically(self):
+        # Two concurrent on_llm_start calls on a budget that covers only one call
+        # must not both pass — check_and_reserve is atomic, so the second is blocked.
+        router = make_router(budget=0.0001)
+        handler = BaarCallbackHandler(router)
+        passed = []
+        failed = []
+        result_lock = threading.Lock()
+
+        def run_preflight():
+            run_id = make_run_id()
+            try:
+                handler.on_llm_start(
+                    {"kwargs": {"model_name": "gpt-4o-mini"}},
+                    ["hello world"],
+                    run_id=run_id,
+                )
+                with result_lock:
+                    passed.append(run_id)
+            except BudgetExhausted:
+                with result_lock:
+                    failed.append(run_id)
+
+        # Patch outside threads — per-thread patching is not thread-safe.
+        with patch("baar.core.budget.cost_per_token", return_value=(0.00006, 0.0)):
+            threads = [threading.Thread(target=run_preflight) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+        # Budget ($0.0001) covers exactly one $0.00006 estimate — only 1 should pass.
+        assert len(passed) <= 1, f"TOCTOU: {len(passed)} preflights passed, expected at most 1"
+        assert len(failed) >= 3
+
+    def test_on_llm_end_retains_estimate_without_usage(self):
+        # Provider omits token usage → preflight estimate must be kept as spend
+        # (not cancelled) so the budget isn't silently inflated.
         router = make_router(budget=1.0)
         handler = BaarCallbackHandler(router)
         run_id = make_run_id()
 
+        before = router.spent
         handler.on_llm_start(
             {"kwargs": {"model_name": "gpt-4o-mini"}}, ["prompt"], run_id=run_id
         )
-        before = router.spent
-        handler.on_llm_end(LLMResult(generations=[], llm_output={}), run_id=run_id)
-        assert router.spent == before
+        with pytest.warns(UserWarning, match="no token usage"):
+            handler.on_llm_end(LLMResult(generations=[], llm_output={}), run_id=run_id)
+        # Estimate is retained — net spend must be positive.
+        assert router.spent > before
+
+    def test_on_llm_end_no_usage_emits_warning(self):
+        router = make_router(budget=1.0)
+        handler = BaarCallbackHandler(router)
+        run_id = make_run_id()
+        handler.on_llm_start(
+            {"kwargs": {"model_name": "gpt-4o-mini"}}, ["prompt"], run_id=run_id
+        )
+        with pytest.warns(UserWarning, match="no token usage"):
+            handler.on_llm_end(LLMResult(generations=[], llm_output={}), run_id=run_id)
 
     def test_on_llm_start_passes_when_budget_ok(self):
         router = make_router(budget=10.0)
@@ -241,18 +301,56 @@ class TestRunIdTracking:
             run_id=make_run_id(),
         )
 
+    def test_extract_model_warns_on_fallback(self):
+        # When serialized dict has no recognisable model key, a UserWarning must
+        # be emitted so the caller knows cost estimation is using a fallback.
+        router = make_router(budget=10.0)
+        handler = BaarCallbackHandler(router)
+        with pytest.warns(UserWarning, match="could not extract model name"):
+            handler.on_llm_start(
+                {},  # no kwargs → no model_name key
+                ["hello"],
+                run_id=make_run_id(),
+            )
+
+    def test_on_chat_model_start_includes_non_string_content(self):
+        # Tool result messages with non-string content must not be silently skipped —
+        # omitting them underestimates tokens for agent/tool chains.
+        from langchain_core.messages import ToolMessage
+        router = make_router(budget=10.0)
+        handler = BaarCallbackHandler(router)
+
+        tool_msg = ToolMessage(content={"result": "42"}, tool_call_id="call_1")
+        human_msg = HumanMessage(content="what is 6*7?")
+
+        with patch("baar.integrations.langchain.token_counter") as mock_tc:
+            mock_tc.return_value = 10
+            handler.on_chat_model_start(
+                {"kwargs": {"model_name": "gpt-4o-mini"}},
+                [[human_msg, tool_msg]],
+                run_id=make_run_id(),
+            )
+            # token_counter must have been called with a string that includes
+            # the non-string tool message content (converted via str()).
+            called_text = mock_tc.call_args[1]["text"]
+            assert "result" in called_text or "42" in called_text
+
 
 # ── BaarChatModel — Bug 3: _astream must be implemented ──────────────────────
 
 class TestAstream:
     @pytest.mark.asyncio
     async def test_astream_yields_chunks(self):
-        # _astream must yield ChatGenerationChunks, not silently fall back.
+        # _astream must use astream_chat (native async generator), not stream_chat (sync).
         router = make_router()
         llm = BaarChatModel(router=router)
         messages = [HumanMessage(content="hi")]
 
-        with patch.object(router, "stream_chat", return_value=iter(["hello", " world"])):
+        async def fake_astream_chat(task, *, messages=None):
+            yield "hello"
+            yield " world"
+
+        with patch.object(router, "astream_chat", fake_astream_chat):
             chunks = []
             async for chunk in llm._astream(messages):
                 chunks.append(chunk.message.content)

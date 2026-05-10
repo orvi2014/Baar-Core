@@ -24,6 +24,7 @@ Install:
 from __future__ import annotations
 
 import uuid
+import warnings
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
 try:
@@ -91,7 +92,15 @@ def _extract_model(serialized: Dict[str, Any], kwargs: Dict[str, Any]) -> str:
         val = invocation.get(key)
         if val:
             return str(val)
-    return "gpt-4o-mini"  # safe default for cost estimation
+    warnings.warn(
+        "BaarCallbackHandler: could not extract model name from LangChain callback context. "
+        "Falling back to 'gpt-4o-mini' for cost estimation — actual costs may differ significantly "
+        "if you are using a different provider. Ensure your LLM class populates "
+        "serialized['kwargs']['model_name'] or invocation_params['model'].",
+        UserWarning,
+        stacklevel=3,
+    )
+    return "gpt-4o-mini"
 
 
 # ── BaarCallbackHandler ───────────────────────────────────────────────────────
@@ -133,13 +142,21 @@ class BaarCallbackHandler(BaseCallbackHandler):
         # calls — thread A's on_llm_end reads thread B's model name. Keying by run_id
         # (the unique UUID LangChain assigns per call) gives each call its own slot.
         self._pending_models: Dict[uuid.UUID, str] = {}
+        # Reservation amounts per run_id — see _preflight for why this is needed.
+        self._pending_reservations: Dict[uuid.UUID, float] = {}
 
     # ── pre-flight ─────────────────────────────────────────────────────────────
 
-    def _preflight(self, model: str, text: str) -> None:
+    def _preflight(self, model: str, text: str) -> float:
         prompt_tokens = token_counter(text=text, model=model)
+        estimated = self._router._tracker.estimate_cost(model, prompt_tokens)
+        # Use check_and_reserve (atomic check + deduct) rather than check_affordability
+        # (read-only). Under concurrent async LangChain calls, two preflights can both
+        # pass a read-only check and together overshoot the budget. Reserving atomically
+        # prevents that. The reservation is cancelled in on_llm_end / on_llm_error once
+        # actual spend is recorded.
         try:
-            self._router._tracker.check_affordability(model, prompt_tokens)
+            self._router._tracker.check_and_reserve(estimated)
         except BudgetExceeded as exc:
             raise BudgetExhausted(
                 f"Baar kill-switch: budget too low for '{model}' "
@@ -147,6 +164,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
                 "No API call was made.",
                 remaining=exc.remaining,
             ) from exc
+        return estimated
 
     def on_llm_start(
         self,
@@ -158,7 +176,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
     ) -> None:
         model = _extract_model(serialized, kwargs)
         self._pending_models[run_id] = model
-        self._preflight(model, " ".join(prompts))
+        self._pending_reservations[run_id] = self._preflight(model, " ".join(prompts))
 
     def on_chat_model_start(
         self,
@@ -170,11 +188,13 @@ class BaarCallbackHandler(BaseCallbackHandler):
     ) -> None:
         model = _extract_model(serialized, kwargs)
         self._pending_models[run_id] = model
+        # Convert all content to str — skipping non-string content (tool results,
+        # multi-modal payloads) silently underestimates tokens for agent chains.
         flat_text = " ".join(
-            m.content for batch in messages for m in batch
-            if isinstance(m.content, str)
+            m.content if isinstance(m.content, str) else str(m.content)
+            for batch in messages for m in batch
         )
-        self._preflight(model, flat_text)
+        self._pending_reservations[run_id] = self._preflight(model, flat_text)
 
     # ── post-call spend recording ──────────────────────────────────────────────
 
@@ -186,15 +206,32 @@ class BaarCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         model = self._pending_models.pop(run_id, "gpt-4o-mini")
+        reserved = self._pending_reservations.pop(run_id, 0.0)
         llm_output = response.llm_output or {}
         usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens", 0))
         completion_tokens = int(usage.get("completion_tokens", 0))
         if prompt_tokens or completion_tokens:
+            # Cancel the preflight reservation before recording actual spend so the
+            # store reflects real cost rather than estimate + actual (double-counting).
+            if reserved:
+                self._router._tracker.cancel_reservation(reserved)
             self._router._tracker.record_manual(
                 model=model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
+            )
+        else:
+            # Provider did not report token usage. Retaining the preflight reservation
+            # as spend prevents silent budget inflation — better to over-count by
+            # estimate than to charge $0 for a call that actually cost something.
+            warnings.warn(
+                f"BaarCallbackHandler: '{model}' completed with no token usage in "
+                "llm_output. Preflight cost estimate retained as spend. "
+                "For accurate tracking, use a LangChain LLM that populates "
+                "llm_output['token_usage'] or llm_output['usage'].",
+                UserWarning,
+                stacklevel=2,
             )
 
     def on_llm_error(
@@ -204,8 +241,12 @@ class BaarCallbackHandler(BaseCallbackHandler):
         run_id: uuid.UUID,
         **kwargs: Any,
     ) -> None:
-        # Clean up the run_id slot so it doesn't leak when the LLM call fails.
+        # Clean up both slots and release the budget reservation so no cost is
+        # charged when the LLM call itself failed.
         self._pending_models.pop(run_id, None)
+        reserved = self._pending_reservations.pop(run_id, 0.0)
+        if reserved:
+            self._router._tracker.cancel_reservation(reserved)
 
 
 # ── BaarChatModel ─────────────────────────────────────────────────────────────
@@ -326,12 +367,12 @@ class BaarChatModel(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ):
-        # Bug fix: without this, BaseChatModel._astream default wraps _stream in a
-        # thread executor — burning a thread per call and blocking the event loop.
-        # This implementation drives stream_chat directly from the async context.
+        # Use astream_chat (native async generator) instead of stream_chat (sync).
+        # Calling a sync blocking iterator inside an async generator stalls the
+        # event loop on every chunk — defeating async entirely.
         task = _last_human_content(messages)
         msg_dicts = _messages_to_dicts(messages)
-        for chunk_text in self._router.stream_chat(task, messages=msg_dicts):
+        async for chunk_text in self._router.astream_chat(task, messages=msg_dicts):
             chunk = ChatGenerationChunk(message=AIMessageChunk(content=chunk_text))
             if run_manager:
                 await run_manager.on_llm_new_token(chunk_text, chunk=chunk)
