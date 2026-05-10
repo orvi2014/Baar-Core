@@ -192,6 +192,38 @@ class BAARConfig:
     max_consecutive_errors: int = 1
     arun_concurrency: int = 1
 
+    @classmethod
+    def anthropic(cls, **kwargs: Any) -> "BAARConfig":
+        """
+        Preset for Anthropic Claude.
+
+        Small: claude-haiku-4-5-20251001  (fast, cheap)
+        Big:   claude-sonnet-4-6          (capable)
+
+        Usage::
+
+            router = BAARRouter.from_config(BAARConfig.anthropic(budget=0.10))
+        """
+        kwargs.setdefault("small_model", "claude-haiku-4-5-20251001")
+        kwargs.setdefault("big_model", "claude-sonnet-4-6")
+        return cls(**kwargs)
+
+    @classmethod
+    def openai(cls, **kwargs: Any) -> "BAARConfig":
+        """
+        Preset for OpenAI (identical to the default, provided for symmetry).
+
+        Small: gpt-4o-mini  (fast, cheap)
+        Big:   gpt-4o       (capable)
+
+        Usage::
+
+            router = BAARRouter.from_config(BAARConfig.openai(budget=0.10))
+        """
+        kwargs.setdefault("small_model", "gpt-4o-mini")
+        kwargs.setdefault("big_model", "gpt-4o")
+        return cls(**kwargs)
+
 
 # ── BAARRouter ─────────────────────────────────────────────────────────────────
 
@@ -363,6 +395,33 @@ class BAARRouter:
         instance = cls.__new__(cls)
         instance._configure(config)
         return instance
+
+    @classmethod
+    def anthropic(cls, **kwargs: Any) -> "BAARRouter":
+        """
+        Shortcut for Anthropic Claude routing.
+
+        Equivalent to ``BAARRouter.from_config(BAARConfig.anthropic(**kwargs))``.
+
+        Usage::
+
+            router = BAARRouter.anthropic(budget=0.10)
+            reply  = router.chat("Summarise this article...")
+        """
+        return cls.from_config(BAARConfig.anthropic(**kwargs))
+
+    @classmethod
+    def openai(cls, **kwargs: Any) -> "BAARRouter":
+        """
+        Shortcut for OpenAI routing (same defaults as ``BAARRouter(...)``).
+
+        Equivalent to ``BAARRouter.from_config(BAARConfig.openai(**kwargs))``.
+
+        Usage::
+
+            router = BAARRouter.openai(budget=0.10)
+        """
+        return cls.from_config(BAARConfig.openai(**kwargs))
 
     # ── Public properties ──────────────────────────────────────────────────────
 
@@ -1307,6 +1366,9 @@ class BAARRouter:
         payload["timestamp_unix_ms"] = int(time.time() * 1000)
         payload["router_budget_usd"] = self.budget
         lock = _telemetry_lock(self._telemetry_jsonl_path)
-        with lock:
-            with open(self._telemetry_jsonl_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        try:
+            with lock:
+                with open(self._telemetry_jsonl_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        except OSError:
+            pass

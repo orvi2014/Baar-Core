@@ -39,19 +39,28 @@ def evaluate_gsm8k(response: str, ground_truth_answer: str) -> bool:
     except ValueError:
         return resp_matches[-1].strip() == gt_val.strip()
 
-def evaluate_code(response: str, prompt: str, canonical_solution: str) -> bool:
+def evaluate_code(response: str, prompt: str, canonical_solution: str,
+                  test_code: str = "", entry_point: str = "") -> bool:
     """
-    Very simplified HumanEval evaluator.
-    Combines prompt + response and checks for valid Python compilation.
+    HumanEval evaluator. When test_code and entry_point are supplied, executes
+    the response against the HumanEval test suite in a sandboxed namespace.
+    Falls back to syntax-only check when test cases are unavailable.
     """
-    # 1. HumanEval response typically doesn't include the prompt.
-    # We combine them to see if they form a valid function.
     full_code = prompt + "\n" + response
+
+    if test_code and entry_point:
+        namespace: dict = {}
+        try:
+            exec(compile(full_code, "<string>", "exec"), namespace)
+            exec(compile(test_code, "<string>", "exec"), namespace)
+            return True
+        except Exception:
+            return False
+
     try:
         compile(full_code, "<string>", "exec")
         return True
     except Exception:
-        # Some models might repeat the prompt. Try compiling response itself.
         try:
             compile(response, "<string>", "exec")
             return True

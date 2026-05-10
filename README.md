@@ -15,7 +15,6 @@ Pre-flight runtime governance for LLM agents. Enforces hard execution limits loc
 pip install baar-core
 ```
 
----
 
 > I left an agent loop running overnight.
 > Woke up to a **$47 bill** — 20,000 GPT-4o tokens answering "what time is it?" queries.
@@ -34,7 +33,6 @@ router.chat("Write a CUDA matmul kernel") # → capable model if budget allows
 
 > 84–94% cost reduction in benchmarks — [see benchmarks](#benchmarks)
 
----
 
 ## Built for
 
@@ -42,7 +40,6 @@ router.chat("Write a CUDA matmul kernel") # → capable model if budget allows
 - SaaS founders giving users LLM access with per-user quotas
 - Anyone who has had (or fears) a runaway agent bill
 
----
 
 ## The problem with every other solution
 
@@ -54,7 +51,6 @@ Helicone observes the disaster. Portkey rate-limits after the fact. **Baar preve
 
 **Baar-Core is a local kill-switch.** Before each call, it estimates the cost. If the remaining budget is too low, it raises an exception **locally** — no DNS lookup, no TCP connection, no token consumed. The call never leaves your machine.
 
----
 
 ## How it works
 
@@ -87,7 +83,6 @@ User task
 2. **Semantic routing** — A fast, cheap model scores task complexity. Not keyword matching — actual semantic understanding.
 3. **Budget-aware downgrade** — Running low? Hard tasks automatically fall back to the cheaper model so the turn still completes.
 
----
 
 ## Quick start
 
@@ -129,19 +124,99 @@ except BudgetExhausted as e:
 
 Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers): OpenAI, Anthropic, Groq, Together, Ollama, OpenRouter, Azure, and more.
 
----
+
+## LangChain & LangGraph integration
+
+```bash
+pip install baar-core[langchain]
+```
+
+**Pattern 1 — add a kill-switch to an existing chain** (zero refactoring):
+
+```python
+from baar import BAARRouter
+from baar.integrations.langchain import BaarCallbackHandler
+from langchain_openai import ChatOpenAI
+
+router  = BAARRouter(budget=0.05)
+handler = BaarCallbackHandler(router)
+
+llm   = ChatOpenAI(model="gpt-4o", callbacks=[handler])
+chain = prompt | llm | StrOutputParser()
+# BudgetExhausted is raised before the API call when budget is too low
+```
+
+**Pattern 2 — BaarChatModel as a drop-in ChatModel** (full routing + downgrade):
+
+```python
+from baar.integrations.langchain import BaarChatModel
+
+router = BAARRouter(budget=0.10, small_model="gpt-4o-mini", big_model="gpt-4o")
+llm    = BaarChatModel(router=router)
+
+chain = prompt | llm | StrOutputParser()   # works anywhere ChatOpenAI would
+```
+
+**Pattern 3 — LangGraph agent with budget protection**:
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+agent = create_react_agent(model=llm, tools=[...])
+# every tool-call iteration is budget-checked before the LLM is invoked
+# BudgetExhausted stops the loop locally — no dangling API calls
+```
+
+Full example: [langchain_guardrail.py](examples/langchain_guardrail.py)
+
+
+## OpenAI-compatible HTTP server (Vercel AI SDK, LlamaIndex, curl)
+
+```bash
+pip install baar-core[vercel]
+```
+
+Wraps BAARRouter as a `/v1/chat/completions` endpoint — any OpenAI-compatible client works without code changes.
+
+```python
+from baar import BAARRouter
+from baar.integrations.vercel import create_app
+import uvicorn
+
+router = BAARRouter(budget=0.10)
+app    = create_app(router, api_key="your-secret")  # api_key optional
+
+uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+**Vercel AI SDK (TypeScript):**
+
+```typescript
+import { createOpenAI } from '@ai-sdk/openai';
+import { streamText } from 'ai';
+
+const baar = createOpenAI({ baseURL: 'http://localhost:8000/v1', apiKey: 'your-secret' });
+
+const { textStream } = streamText({
+    model: baar('baar'),
+    messages: [{ role: 'user', content: 'Hello!' }],
+});
+```
+
+Budget errors surface as standard HTTP codes — `402` when the budget is exhausted, `422` when the value gate rejects the task. Streaming errors are delivered inside the SSE stream so the connection stays clean.
+
 
 ## Real-world examples
 
 | Example | Use case |
 |---|---|
+| [langchain_guardrail.py](examples/langchain_guardrail.py) | LangChain callback handler, BaarChatModel, LangGraph agent |
 | [fastapi_per_user_budget.py](examples/fastapi_per_user_budget.py) | SaaS: per-user $0.10 quota with SQLite persistence |
 | [agent_loop.py](examples/agent_loop.py) | Autonomous agent loop with graceful budget stop |
 | [streaming.py](examples/streaming.py) | Streaming responses with live budget tracking |
 | [multi_tenant.py](examples/multi_tenant.py) | Concurrent multi-user budget isolation, quota report |
 | [basic_usage.py](examples/basic_usage.py) | Getting started |
 
----
 
 ## Multi-tenant & per-user budgets
 
@@ -201,7 +276,6 @@ from baar.core.stores import FileBudgetStore
 router = BAARRouter(budget=1.00, store=FileBudgetStore("my_budget.json"))
 ```
 
----
 
 ## Benchmarks
 
@@ -245,7 +319,6 @@ baar-bench --dataset all --limit 10 --budget 2 \
 
 Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --mock` (free) or add your API key for live results.
 
----
 
 ## vs. alternatives
 
@@ -262,7 +335,6 @@ Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --
 
 The key difference: every alternative routes and tracks. Baar-Core **prevents** — the exception is raised before a single byte leaves your machine.
 
----
 
 ## Security
 
@@ -270,7 +342,6 @@ Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org
 
 Details: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md)
 
----
 
 ## Configuration
 
@@ -303,7 +374,6 @@ baar-telemetry telemetry.jsonl
 baar-stress
 ```
 
----
 
 ## License
 

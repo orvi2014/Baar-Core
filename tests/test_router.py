@@ -9,6 +9,7 @@ All tests run without API keys.
 import pytest
 from unittest.mock import MagicMock, patch
 from baar.core.router import Router, ModelTier, RoutingDecision
+from baar.router import BAARConfig, BAARRouter
 
 
 # ─────────────────────────────────────────────────────────
@@ -518,3 +519,49 @@ class TestInjectableSharedCache:
         d2 = router.decide("hello there", 0.0)
         assert d1.routing_cache_hit is False
         assert d2.routing_cache_hit is True
+
+
+# ─────────────────────────────────────────────────────────
+# BAARConfig / BAARRouter presets
+# ─────────────────────────────────────────────────────────
+
+class TestPresets:
+    """Model-pair presets on BAARConfig and BAARRouter."""
+
+    def test_anthropic_config_sets_claude_models(self):
+        cfg = BAARConfig.anthropic(budget=0.05)
+        assert cfg.small_model == "claude-haiku-4-5-20251001"
+        assert cfg.big_model == "claude-sonnet-4-6"
+        assert cfg.budget == 0.05
+
+    def test_openai_config_sets_gpt_models(self):
+        cfg = BAARConfig.openai(budget=0.20)
+        assert cfg.small_model == "gpt-4o-mini"
+        assert cfg.big_model == "gpt-4o"
+        assert cfg.budget == 0.20
+
+    def test_anthropic_config_allows_model_override(self):
+        cfg = BAARConfig.anthropic(big_model="claude-opus-4-7")
+        assert cfg.small_model == "claude-haiku-4-5-20251001"
+        assert cfg.big_model == "claude-opus-4-7"
+
+    def test_openai_config_allows_model_override(self):
+        cfg = BAARConfig.openai(small_model="gpt-4o-mini", big_model="o1")
+        assert cfg.big_model == "o1"
+
+    def test_anthropic_router_shortcut(self):
+        router = BAARRouter.anthropic(budget=0.10, use_llm_router=False)
+        assert router.small_model == "claude-haiku-4-5-20251001"
+        assert router.big_model == "claude-sonnet-4-6"
+        assert router.budget == 0.10
+
+    def test_openai_router_shortcut(self):
+        router = BAARRouter.openai(budget=0.50, use_llm_router=False)
+        assert router.small_model == "gpt-4o-mini"
+        assert router.big_model == "gpt-4o"
+        assert router.budget == 0.50
+
+    def test_presets_preserve_other_defaults(self):
+        cfg = BAARConfig.anthropic()
+        assert cfg.complexity_threshold == 0.80
+        assert cfg.routing_cache_enabled is True

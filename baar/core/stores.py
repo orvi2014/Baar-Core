@@ -119,8 +119,10 @@ class FileBudgetStore(BudgetStore):
     """
     JSON file-backed store.  Survives process restarts.
 
-    Suitable for single-process workloads. Not recommended for multiple
-    concurrent writers (use SQLiteBudgetStore for that).
+    Suitable for single-process workloads. atomic_check_and_reserve uses an
+    in-process threading.Lock — it is NOT safe across multiple OS processes
+    (e.g., gunicorn/uvicorn workers). Use SQLiteBudgetStore for multi-process
+    deployments.
 
     Args:
         path:      Path to the JSON file (created if absent).
@@ -249,13 +251,13 @@ class SQLiteBudgetStore(BudgetStore):
     # ── internal helpers ───────────────────────────────────────────────────────
 
     def _connect(self) -> sqlite3.Connection:
-        os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
         conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=10)
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     def _init_db(self) -> None:
         with self._lock:
+            os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
             with self._connect() as conn:
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("""
