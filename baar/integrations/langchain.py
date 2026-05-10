@@ -23,7 +23,8 @@ Install:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, Iterator, List, Optional, Sequence
+import uuid
+from typing import Any, Dict, Iterator, List, Optional, Sequence
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler
@@ -33,7 +34,6 @@ try:
         AIMessageChunk,
         BaseMessage,
         HumanMessage,
-        SystemMessage,
     )
     from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult, LLMResult
     from pydantic import PrivateAttr
@@ -120,10 +120,19 @@ class BaarCallbackHandler(BaseCallbackHandler):
     router's remaining balance stays accurate.
     """
 
+    # Bug fix: raise_error=False (the BaseCallbackHandler default) causes LangChain's
+    # handle_event to catch and swallow any exception raised in on_llm_start, silently
+    # logging it as a warning. The kill-switch never fires. Setting raise_error=True
+    # forces handle_event to re-raise, so BudgetExhausted propagates to the caller.
+    raise_error: bool = True
+
     def __init__(self, router: BAARRouter) -> None:
         super().__init__()
         self._router = router
-        self._pending_model: str = ""
+        # Bug fix: a single _pending_model string is a race condition under concurrent
+        # calls — thread A's on_llm_end reads thread B's model name. Keying by run_id
+        # (the unique UUID LangChain assigns per call) gives each call its own slot.
+        self._pending_models: Dict[uuid.UUID, str] = {}
 
     # ── pre-flight ─────────────────────────────────────────────────────────────
 
@@ -143,20 +152,24 @@ class BaarCallbackHandler(BaseCallbackHandler):
         self,
         serialized: Dict[str, Any],
         prompts: List[str],
+        *,
+        run_id: uuid.UUID,
         **kwargs: Any,
     ) -> None:
         model = _extract_model(serialized, kwargs)
-        self._pending_model = model
+        self._pending_models[run_id] = model
         self._preflight(model, " ".join(prompts))
 
     def on_chat_model_start(
         self,
         serialized: Dict[str, Any],
         messages: List[List[BaseMessage]],
+        *,
+        run_id: uuid.UUID,
         **kwargs: Any,
     ) -> None:
         model = _extract_model(serialized, kwargs)
-        self._pending_model = model
+        self._pending_models[run_id] = model
         flat_text = " ".join(
             m.content for batch in messages for m in batch
             if isinstance(m.content, str)
@@ -165,8 +178,14 @@ class BaarCallbackHandler(BaseCallbackHandler):
 
     # ── post-call spend recording ──────────────────────────────────────────────
 
-    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
-        model = self._pending_model or "gpt-4o-mini"
+    def on_llm_end(
+        self,
+        response: LLMResult,
+        *,
+        run_id: uuid.UUID,
+        **kwargs: Any,
+    ) -> None:
+        model = self._pending_models.pop(run_id, "gpt-4o-mini")
         llm_output = response.llm_output or {}
         usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens", 0))
@@ -177,6 +196,16 @@ class BaarCallbackHandler(BaseCallbackHandler):
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
+
+    def on_llm_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: uuid.UUID,
+        **kwargs: Any,
+    ) -> None:
+        # Clean up the run_id slot so it doesn't leak when the LLM call fails.
+        self._pending_models.pop(run_id, None)
 
 
 # ── BaarChatModel ─────────────────────────────────────────────────────────────
@@ -289,3 +318,21 @@ class BaarChatModel(BaseChatModel):
         msg_dicts = _messages_to_dicts(messages)
         reply = await self._router.achat(task, messages=msg_dicts)
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=reply))])
+
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ):
+        # Bug fix: without this, BaseChatModel._astream default wraps _stream in a
+        # thread executor — burning a thread per call and blocking the event loop.
+        # This implementation drives stream_chat directly from the async context.
+        task = _last_human_content(messages)
+        msg_dicts = _messages_to_dicts(messages)
+        for chunk_text in self._router.stream_chat(task, messages=msg_dicts):
+            chunk = ChatGenerationChunk(message=AIMessageChunk(content=chunk_text))
+            if run_manager:
+                await run_manager.on_llm_new_token(chunk_text, chunk=chunk)
+            yield chunk
