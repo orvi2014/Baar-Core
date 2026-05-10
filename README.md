@@ -1,9 +1,13 @@
 # Baar-Core
 
+Pre-flight runtime governance for LLM agents. Enforces hard execution limits locally — before requests reach the provider.
+
 **Stop LLM API calls before they happen. Not after.**
 
 [![CI](https://github.com/orvi2014/Baar-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/orvi2014/Baar-Core/actions/workflows/ci.yml)
 [![PyPI version](https://badge.fury.io/py/baar-core.svg)](https://badge.fury.io/py/baar-core)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/baar-core)](https://pypi.org/project/baar-core/)
+[![GitHub Stars](https://img.shields.io/github/stars/orvi2014/Baar-Core)](https://github.com/orvi2014/Baar-Core/stargazers)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -28,6 +32,16 @@ router.chat("Write a CUDA matmul kernel") # → capable model if budget allows
 # budget exhausted → raises BudgetExhausted, zero API calls made
 ```
 
+> 84–94% cost reduction in benchmarks — [see benchmarks](#benchmarks)
+
+---
+
+## Built for
+
+- Teams deploying autonomous agents in production
+- SaaS founders giving users LLM access with per-user quotas
+- Anyone who has had (or fears) a runaway agent bill
+
 ---
 
 ## The problem with every other solution
@@ -35,6 +49,8 @@ router.chat("Write a CUDA matmul kernel") # → capable model if budget allows
 Most cost tools **track spend after the fact.** You get an alert when the bill is already large.
 
 LiteLLM's budget manager, Portkey rate limits, provider spend alerts — they all tell you what happened. They don't stop it mid-flight.
+
+Helicone observes the disaster. Portkey rate-limits after the fact. **Baar prevents it.**
 
 **Baar-Core is a local kill-switch.** Before each call, it estimates the cost. If the remaining budget is too low, it raises an exception **locally** — no DNS lookup, no TCP connection, no token consumed. The call never leaves your machine.
 
@@ -202,6 +218,7 @@ Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --
 | | **Baar-Core** | RouteLLM | LiteLLM | Portkey |
 |---|:---:|:---:|:---:|:---:|
 | Hard local kill-switch (zero network calls) | ✅ | ❌ | ❌ | ❌ |
+| Prevents Denial-of-Wallet (OWASP LLM10:2025) | ✅ | ❌ | ❌ | ❌ |
 | Works fully offline | ✅ | ❌ | ❌ | ❌ |
 | Per-user persistent budgets | ✅ SQLite/File | ❌ | Partial | ✅ (managed) |
 | Semantic complexity routing | ✅ | ✅ | ✅ | ✅ |
@@ -210,6 +227,14 @@ Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --
 | Open source (MIT) | ✅ | ✅ | ✅ | ❌ |
 
 The key difference: every alternative routes and tracks. Baar-Core **prevents** — the exception is raised before a single byte leaves your machine.
+
+---
+
+## Security
+
+Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.
+
+Details: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md)
 
 ---
 
@@ -243,14 +268,6 @@ baar-telemetry telemetry.jsonl
 ```bash
 baar-stress
 ```
-
----
-
-## Security
-
-Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.
-
-Details: [RESEARCH.md](https://github.com/orvi2014/Baar-Core/blob/main/RESEARCH.md)
 
 ---
 
