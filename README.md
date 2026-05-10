@@ -203,6 +203,23 @@ const { textStream } = streamText({
 });
 ```
 
+**LlamaIndex (Python):**
+
+```python
+# pip install llama-index-llms-openai
+from llama_index.llms.openai import OpenAI as LlamaOpenAI
+from llama_index.core import Settings
+
+llm = LlamaOpenAI(
+    model="baar",
+    api_base="http://localhost:8000/v1",
+    api_key="your-secret",
+)
+
+Settings.llm = llm  # drop-in for any LlamaIndex agent, RAG pipeline, or query engine
+response = llm.complete("Explain the GIL in Python")
+```
+
 Budget errors surface as standard HTTP codes — `402` when the budget is exhausted, `422` when the value gate rejects the task. Streaming errors are delivered inside the SSE stream so the connection stays clean.
 
 
