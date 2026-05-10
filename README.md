@@ -170,6 +170,42 @@ agent = create_react_agent(model=llm, tools=[...])
 Full example: [langchain_guardrail.py](examples/langchain_guardrail.py)
 
 
+## OpenAI-compatible HTTP server (Vercel AI SDK, LlamaIndex, curl)
+
+```bash
+pip install baar-core[vercel]
+```
+
+Wraps BAARRouter as a `/v1/chat/completions` endpoint — any OpenAI-compatible client works without code changes.
+
+```python
+from baar import BAARRouter
+from baar.integrations.vercel import create_app
+import uvicorn
+
+router = BAARRouter(budget=0.10)
+app    = create_app(router, api_key="your-secret")  # api_key optional
+
+uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+**Vercel AI SDK (TypeScript):**
+
+```typescript
+import { createOpenAI } from '@ai-sdk/openai';
+import { streamText } from 'ai';
+
+const baar = createOpenAI({ baseURL: 'http://localhost:8000/v1', apiKey: 'your-secret' });
+
+const { textStream } = streamText({
+    model: baar('baar'),
+    messages: [{ role: 'user', content: 'Hello!' }],
+});
+```
+
+Budget errors surface as standard HTTP codes — `402` when the budget is exhausted, `422` when the value gate rejects the task. Streaming errors are delivered inside the SSE stream so the connection stays clean.
+
+
 ## Real-world examples
 
 | Example | Use case |
