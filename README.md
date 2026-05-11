@@ -170,6 +170,75 @@ agent = create_react_agent(model=llm, tools=[...])
 Full example: [langchain_guardrail.py](examples/langchain_guardrail.py)
 
 
+## LangGraph middleware
+
+`BaarMiddleware` wraps any compiled LangGraph graph and enforces hard limits at the outer loop level — before a single node executes.
+
+```python
+from baar import BAARRouter
+from baar.integrations.langgraph import BaarMiddleware, StepLimitExceeded
+
+router = BAARRouter(budget=0.50)
+graph  = workflow.compile()          # your compiled LangGraph graph
+
+protected = BaarMiddleware(
+    graph=graph,
+    router=router,
+    max_steps=10,        # stop after 10 outer invocations
+    max_budget=0.05,     # block if less than $0.05 remaining
+    recursion_limit=25,  # injected into LangGraph config automatically
+)
+
+try:
+    result = protected.invoke({"messages": [...]})
+    print(f"Steps used: {protected.steps}/10")
+except StepLimitExceeded as e:
+    print(f"Stopped at {e.steps}/{e.max_steps} steps")
+except BudgetExhausted as e:
+    print(f"Budget gate: ${e.remaining:.6f} remaining")
+```
+
+Works with all four call modes: `invoke`, `stream`, `ainvoke`, `astream`.
+
+Full example: [langgraph_middleware.py](examples/langgraph_middleware.py)
+
+
+## Tool execution guards
+
+`@baar_guard` wraps any tool function — sync or async — with hard call limits and budget gates. Works with Claude, OpenAI/Codex, LangChain, LangGraph, or plain Python. The AI never knows the guard is there.
+
+```python
+from baar.integrations.tools import baar_guard, ToolCallLimitExceeded
+
+@baar_guard(router=router, max_calls=5, cost_per_call=0.001)
+def web_search(query: str) -> str:
+    return search_api(query)
+
+@baar_guard(router=router, max_calls=3, min_budget=0.02)
+async def generate_image(prompt: str) -> str:
+    return await image_api(prompt)
+```
+
+- `max_calls` — hard call count limit per session. `None` = unlimited.
+- `min_budget` — block if `router.remaining` drops below this threshold.
+- `cost_per_call` — deduct a fixed amount from budget on each **successful** call. No charge on failure.
+
+Catch limit exceptions in your agent dispatcher so the AI gets a readable error instead of a crash:
+
+```python
+try:
+    result = web_search(query)
+except ToolCallLimitExceeded as e:
+    result = f"Tool '{e.tool_name}' limit reached ({e.calls}/{e.max_calls})."
+except BudgetExhausted as e:
+    result = f"Budget too low. Remaining: ${e.remaining:.6f}."
+```
+
+Works with OpenAI Codex CLI — set `openai_base_url = "http://localhost:8000/v1"` in `~/.codex/config.toml` to route all Codex calls through Baar.
+
+Full examples: [tool_guard.py](examples/tool_guard.py) · [claude_tool_guard.py](examples/claude_tool_guard.py) · [openai_tool_guard.py](examples/openai_tool_guard.py)
+
+
 ## OpenAI-compatible HTTP server (Vercel AI SDK, LlamaIndex, curl)
 
 ```bash
@@ -228,6 +297,11 @@ Budget errors surface as standard HTTP codes — `402` when the budget is exhaus
 | Example | Use case |
 |---|---|
 | [langchain_guardrail.py](examples/langchain_guardrail.py) | LangChain callback handler, BaarChatModel, LangGraph agent |
+| [langgraph_middleware.py](examples/langgraph_middleware.py) | BaarMiddleware: step limits, budget gate, async streaming |
+| [tool_guard.py](examples/tool_guard.py) | @baar_guard: call limits, cost deduction, safe dispatcher |
+| [claude_tool_guard.py](examples/claude_tool_guard.py) | @baar_guard with Anthropic Claude tool use |
+| [openai_tool_guard.py](examples/openai_tool_guard.py) | @baar_guard with OpenAI / Codex function calling |
+| [vercel_server.py](examples/vercel_server.py) | HTTP server for Vercel AI SDK, LlamaIndex, curl |
 | [fastapi_per_user_budget.py](examples/fastapi_per_user_budget.py) | SaaS: per-user $0.10 quota with SQLite persistence |
 | [agent_loop.py](examples/agent_loop.py) | Autonomous agent loop with graceful budget stop |
 | [streaming.py](examples/streaming.py) | Streaming responses with live budget tracking |
@@ -346,6 +420,8 @@ Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --
 | Works fully offline | ✅ | ❌ | ❌ | ❌ |
 | Per-user namespaced budgets (no proxy) | ✅ SQLite/File | ❌ | ❌ (proxy required) | ❌ (cloud only) |
 | Cross-process TOCTOU-safe reservations | ✅ | ❌ | ❌ | N/A |
+| LangGraph step limit + budget middleware | ✅ | ❌ | ❌ | ❌ |
+| Tool execution guards (@baar_guard) | ✅ | ❌ | ❌ | ❌ |
 | Semantic complexity routing | ✅ | ✅ | ✅ | ✅ |
 | No proxy / no server required | ✅ | ✅ | ❌ | ❌ |
 | Open source (MIT) | ✅ | ✅ | ✅ | ❌ |
