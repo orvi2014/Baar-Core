@@ -9,9 +9,9 @@ description = "Budget-Aware Agentic Routing — route LLM calls intelligently be
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-keywords = ["llm", "agents", "routing", "budget", "cost", "openai", "langchain"]
+keywords = ["llm", "agents", "routing", "budget", "cost", "openai", "langchain", "langgraph", "agent budget"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -49,8 +49,11 @@ baar-stress = "benchmarks.stress_test:main"
 baar-telemetry = "baar.telemetry_cli:main"
 
 [project.urls]
-Homepage = "https://github.com/orvi2014/Baar-Core"
+Homepage = "https://baar.robatdasorvi.com"
+Documentation = "https://baar.robatdasorvi.com"
+Repository = "https://github.com/orvi2014/Baar-Core"
 Issues = "https://github.com/orvi2014/Baar-Core/issues"
+Changelog = "https://github.com/orvi2014/Baar-Core/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -60,6 +63,9 @@ include = ["baar*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::RuntimeWarning:baar.core.router",
+]
 
 [tool.coverage.run]
 source = ["baar"]

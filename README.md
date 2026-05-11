@@ -5,8 +5,9 @@ Pre-flight runtime governance for LLM agents. Enforces hard execution limits loc
 **Stop LLM API calls before they happen. Not after.**
 
 [![CI](https://github.com/orvi2014/Baar-Core/actions/workflows/ci.yml/badge.svg)](https://github.com/orvi2014/Baar-Core/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/orvi2014/Baar-Core/branch/main/graph/badge.svg)](https://codecov.io/gh/orvi2014/Baar-Core)
 [![PyPI version](https://badge.fury.io/py/baar-core.svg)](https://badge.fury.io/py/baar-core)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/baar-core)](https://pypi.org/project/baar-core/)
+[![PyPI Downloads](https://static.pepy.tech/badge/baar-core/month)](https://pepy.tech/project/baar-core)
 [![GitHub Stars](https://img.shields.io/github/stars/orvi2014/Baar-Core)](https://github.com/orvi2014/Baar-Core/stargazers)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
