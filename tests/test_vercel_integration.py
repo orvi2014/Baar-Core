@@ -60,16 +60,11 @@ class TestModelsEndpoint:
 # ── /v1/chat/completions — non-streaming ─────────────────────────────────────
 
 class TestNonStreaming:
-    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
-    @patch("litellm.completion")
-    def test_returns_openai_compatible_response(self, mock_comp, mock_cpt):
-        mock_comp.return_value = MagicMock(
-            choices=[MagicMock(message=MagicMock(content="Hello!"))],
-            usage=MagicMock(prompt_tokens=10, completion_tokens=5),
-            model="gpt-4o-mini",
-        )
-        client = make_client(make_router())
-        resp = client.post("/v1/chat/completions", json=CHAT_PAYLOAD)
+    def test_returns_openai_compatible_response(self):
+        router = make_router()
+        client = make_client(router)
+        with patch.object(router, "achat", new=AsyncMock(return_value="Hello!")):
+            resp = client.post("/v1/chat/completions", json=CHAT_PAYLOAD)
         assert resp.status_code == 200
         body = resp.json()
         assert body["object"] == "chat.completion"
@@ -79,33 +74,23 @@ class TestNonStreaming:
         assert "usage" in body
         assert body["usage"]["total_tokens"] >= 0
 
-    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
-    @patch("litellm.completion")
-    def test_response_has_required_openai_fields(self, mock_comp, mock_cpt):
-        mock_comp.return_value = MagicMock(
-            choices=[MagicMock(message=MagicMock(content="Hi"))],
-            usage=MagicMock(prompt_tokens=5, completion_tokens=2),
-            model="gpt-4o-mini",
-        )
-        client = make_client(make_router())
-        resp = client.post("/v1/chat/completions", json=CHAT_PAYLOAD)
+    def test_response_has_required_openai_fields(self):
+        router = make_router()
+        client = make_client(router)
+        with patch.object(router, "achat", new=AsyncMock(return_value="Hi")):
+            resp = client.post("/v1/chat/completions", json=CHAT_PAYLOAD)
         body = resp.json()
         assert "id" in body
         assert body["id"].startswith("chatcmpl-")
         assert "created" in body
         assert "model" in body
 
-    @patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
-    @patch("litellm.completion")
-    def test_extra_openai_fields_accepted(self, mock_comp, mock_cpt):
-        mock_comp.return_value = MagicMock(
-            choices=[MagicMock(message=MagicMock(content="Ok"))],
-            usage=MagicMock(prompt_tokens=5, completion_tokens=2),
-            model="gpt-4o-mini",
-        )
+    def test_extra_openai_fields_accepted(self):
+        router = make_router()
+        client = make_client(router)
         payload = {**CHAT_PAYLOAD, "temperature": 0.7, "top_p": 0.9, "user": "user-123"}
-        client = make_client(make_router())
-        resp = client.post("/v1/chat/completions", json=payload)
+        with patch.object(router, "achat", new=AsyncMock(return_value="Ok")):
+            resp = client.post("/v1/chat/completions", json=payload)
         assert resp.status_code == 200
 
 
@@ -113,7 +98,7 @@ class TestNonStreaming:
 
 class TestBudgetErrors:
     def test_budget_exhausted_returns_402(self):
-        router = make_router(budget=0.0)
+        router = make_router(budget=0.000001)
         client = make_client(router)
         with patch.object(router, "achat", side_effect=BudgetExhausted("broke", remaining=0.0)):
             resp = client.post("/v1/chat/completions", json=CHAT_PAYLOAD)
