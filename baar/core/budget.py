@@ -3,6 +3,7 @@ Budget tracker — real token-based cost using LiteLLM pricing.
 This is the financial source of truth for the entire system.
 """
 
+import math
 import warnings
 from collections import deque
 from dataclasses import dataclass
@@ -134,7 +135,10 @@ class BudgetTracker:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
-            return float(in_cost + out_cost)
+            cost = float(in_cost + out_cost)
+            if not math.isfinite(cost):
+                raise ValueError(f"non-finite cost for model '{model}'")
+            return cost
         except Exception:
             warnings.warn(
                 f"BudgetTracker: no pricing data for model '{model}'. "
