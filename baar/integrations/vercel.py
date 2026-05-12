@@ -60,8 +60,8 @@ try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import JSONResponse, StreamingResponse
     from pydantic import BaseModel, Field
-except ImportError as exc:
-    raise ImportError(
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(  # pragma: no cover
         "FastAPI is required for the Vercel integration. "
         "Install it with:  pip install baar-core[vercel]"
     ) from exc
