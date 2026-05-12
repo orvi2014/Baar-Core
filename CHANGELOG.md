@@ -2,6 +2,13 @@
 
 All notable changes to baar-core are documented here.
 
+## [0.5.1] — 2026-05-12
+
+### Added
+- **MCP server example** (`examples/mcp_server.py`) — exposes `get_budget_status`, `web_search`, and `run_python` as budget-guarded MCP tools for Claude Code and Cursor. Register via `~/.claude/claude.json`; all three tools are budget-capped and call-limited via `@baar_guard`.
+- Test suite for MCP server (`tests/test_mcp_server.py`, 18 tests) — mocks `mcp` and `firecrawl` at import time; no real network calls needed.
+- README: new "MCP server" section with setup snippet and `claude.json` registration example.
+
 ## [0.5.0] — 2026-05-12
 
 ### Added

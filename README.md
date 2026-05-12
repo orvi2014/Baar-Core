@@ -240,6 +240,41 @@ Works with OpenAI Codex CLI — set `openai_base_url = "http://localhost:8000/v1
 Full examples: [tool_guard.py](examples/tool_guard.py) · [claude_tool_guard.py](examples/claude_tool_guard.py) · [openai_tool_guard.py](examples/openai_tool_guard.py)
 
 
+## MCP server (Claude Code / Cursor)
+
+`examples/mcp_server.py` exposes three budget-guarded tools to any MCP client — no API key required on the client side.
+
+```python
+# pip install baar-core mcp firecrawl-py
+
+from baar import BAARRouter
+from baar.integrations.tools import baar_guard
+
+router = BAARRouter(budget=0.10, use_llm_router=False)
+
+@baar_guard(router=router, max_calls=20, cost_per_call=0.001)
+async def web_search(query: str) -> str: ...
+
+@baar_guard(router=router, max_calls=10, min_budget=0.005)
+async def run_python(code: str) -> str: ...
+```
+
+Register with Claude Code — add to `~/.claude/claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "baar": {
+      "command": "python3",
+      "args": ["/path/to/examples/mcp_server.py"],
+      "env": { "BAAR_BUDGET": "0.10" }
+    }
+  }
+}
+```
+
+Claude Code will show `get_budget_status`, `web_search`, and `run_python` as tools automatically. Every call is budget-gated — the session stops spending the moment the cap is hit.
+
 ## OpenAI-compatible HTTP server (Vercel AI SDK, LlamaIndex, curl)
 
 ```bash
@@ -302,6 +337,7 @@ Budget errors surface as standard HTTP codes — `402` when the budget is exhaus
 | [tool_guard.py](examples/tool_guard.py) | @baar_guard: call limits, cost deduction, safe dispatcher |
 | [claude_tool_guard.py](examples/claude_tool_guard.py) | @baar_guard with Anthropic Claude tool use |
 | [openai_tool_guard.py](examples/openai_tool_guard.py) | @baar_guard with OpenAI / Codex function calling |
+| [mcp_server.py](examples/mcp_server.py) | MCP server for Claude Code / Cursor — budget-guarded web_search & run_python |
 | [vercel_server.py](examples/vercel_server.py) | HTTP server for Vercel AI SDK, LlamaIndex, curl |
 | [fastapi_per_user_budget.py](examples/fastapi_per_user_budget.py) | SaaS: per-user $0.10 quota with SQLite persistence |
 | [agent_loop.py](examples/agent_loop.py) | Autonomous agent loop with graceful budget stop |
