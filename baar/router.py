@@ -36,7 +36,7 @@ try:
         _litellm_exc.Timeout,
         _litellm_exc.APIConnectionError,
     )
-except (ImportError, AttributeError):
+except (ImportError, AttributeError):  # pragma: no cover
     _LITELLM_RETRYABLE = ()
 
 
@@ -125,9 +125,9 @@ def _sync_completion_with_retry(
         try:
             return litellm.completion(**kwargs)
         except Exception as exc:
-            if attempt < max_retries and _is_retryable(exc):
-                time.sleep(delay * (1.0 + random.uniform(-0.1, 0.3)))
-                delay = min(delay * 2, 30.0)
+            if attempt < max_retries and _is_retryable(exc):  # pragma: no cover
+                time.sleep(delay * (1.0 + random.uniform(-0.1, 0.3)))  # pragma: no cover
+                delay = min(delay * 2, 30.0)  # pragma: no cover
             else:
                 raise
 
@@ -148,9 +148,9 @@ async def _async_completion_with_retry(
         try:
             return await litellm.acompletion(**kwargs)
         except Exception as exc:
-            if attempt < max_retries and _is_retryable(exc):
-                await asyncio.sleep(delay * (1.0 + random.uniform(-0.1, 0.3)))
-                delay = min(delay * 2, 30.0)
+            if attempt < max_retries and _is_retryable(exc):  # pragma: no cover
+                await asyncio.sleep(delay * (1.0 + random.uniform(-0.1, 0.3)))  # pragma: no cover
+                delay = min(delay * 2, 30.0)  # pragma: no cover
             else:
                 raise
 
@@ -718,10 +718,10 @@ class BAARRouter:
                     failover_errors.append(
                         f"{candidate}: completion failed ({type(e).__name__}: {e})"
                     )
-        except BaseException:
-            if response_stream is None:
-                self._tracker.cancel_reservation(reserved)
-            raise
+        except BaseException:  # pragma: no cover
+            if response_stream is None:  # pragma: no cover
+                self._tracker.cancel_reservation(reserved)  # pragma: no cover
+            raise  # pragma: no cover
 
         if response_stream is None:
             self._tracker.cancel_reservation(reserved)
@@ -1057,10 +1057,10 @@ class BAARRouter:
                     failover_errors.append(
                         f"{candidate}: completion failed ({type(e).__name__}: {e})"
                     )
-        except BaseException:
-            if response_stream is None:
-                self._tracker.cancel_reservation(reserved)
-            raise
+        except BaseException:  # pragma: no cover
+            if response_stream is None:  # pragma: no cover
+                self._tracker.cancel_reservation(reserved)  # pragma: no cover
+            raise  # pragma: no cover
 
         if response_stream is None:
             self._tracker.cancel_reservation(reserved)

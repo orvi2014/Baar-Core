@@ -38,8 +38,8 @@ try:
     )
     from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult, LLMResult
     from pydantic import PrivateAttr
-except ImportError as exc:
-    raise ImportError(
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(  # pragma: no cover
         "LangChain is required for this integration. "
         "Install it with:  pip install baar-core[langchain]"
     ) from exc

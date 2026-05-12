@@ -43,14 +43,14 @@ class BudgetStore:
 
     def get_spent(self) -> float:
         """Return total spend recorded so far for this namespace."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def add_spent(self, amount: float) -> float:
         """
         Atomically add *amount* to the running total.
         Returns the new cumulative spend.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def set_spent(self, value: float) -> None:
         """
@@ -58,11 +58,11 @@ class BudgetStore:
         Used only for test-compatible direct assignment — prefer add_spent
         for normal operation.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def reset(self) -> None:
         """Reset spend to 0.0 for this namespace."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def atomic_check_and_reserve(self, total_budget: float, amount: float) -> bool:
         """
@@ -73,7 +73,7 @@ class BudgetStore:
         Fixes the cross-instance TOCTOU race where two BAARRouter instances
         sharing the same store can both pass affordability checks.
         """
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 # ── In-memory (default, backward-compatible) ──────────────────────────────────
