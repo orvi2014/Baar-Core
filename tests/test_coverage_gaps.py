@@ -462,6 +462,9 @@ class TestVercelEdgeCases:
 
 # ── langchain integration edge cases ──────────────────────────────────────────
 
+pytest.importorskip("langchain_core", reason="langchain-core not installed")
+
+
 class TestLangchainEdgeCases:
     def test_callback_handler_warns_on_missing_model(self):
         """BaarCallbackHandler warns when model name can't be extracted."""
