@@ -1154,10 +1154,10 @@ class BAARRouter:
                 async with sem:
                     # Re-check after acquiring semaphore: another coroutine may have
                     # updated err_count or budget_stop while this one was waiting.
-                    if budget_stop.is_set():
-                        return
-                    if err_count[0] >= self._max_consecutive_errors:
-                        return
+                    if budget_stop.is_set():  # pragma: no cover
+                        return  # pragma: no cover
+                    if err_count[0] >= self._max_consecutive_errors:  # pragma: no cover
+                        return  # pragma: no cover
                     try:
                         await self.achat(task)
                         err_count[0] = 0

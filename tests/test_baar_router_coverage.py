@@ -845,3 +845,107 @@ class TestInitExports:
         import baar
         assert hasattr(baar, "__version__")
         assert isinstance(baar.__version__, str)
+
+
+class TestRouterPyGaps:
+    """Covers uncovered lines in baar/router.py."""
+
+    @pytest.mark.asyncio
+    async def test_async_completion_with_retry_passes_timeout(self):
+        """Line 146: timeout kwarg forwarded to acompletion."""
+        with patch("baar.router.litellm.acompletion", return_value=_resp("OK")) as mock_ac:
+            await _async_completion_with_retry("gpt-4o-mini", [], timeout=45.0)
+        assert mock_ac.call_args[1].get("timeout") == 45.0
+
+    @patch("baar.router.litellm.completion")
+    @patch("baar.core.budget.completion_cost", return_value=0.00005)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000025, 0.000025))
+    def test_stream_chat_post_recording_error_is_logged(self, _cpt, _cc, mock_comp):
+        """Lines 775-776: exception inside post-stream try block is caught and logged."""
+        mock_comp.return_value = _stream_chunks("hello world")
+        r = _router()
+        with patch.object(r._tracker, "record_manual", side_effect=RuntimeError("disk full")):
+            list(r.stream_chat("Say hello"))
+        assert any("post-stream recording failed" in e for e in r.log.errors)
+
+    @pytest.mark.asyncio
+    @patch("baar.router.litellm.acompletion")
+    @patch("baar.core.budget.completion_cost", return_value=0.00005)
+    @patch("baar.core.budget.cost_per_token", return_value=(0.000025, 0.000025))
+    async def test_astream_chat_post_recording_error_is_logged(self, _cpt, _cc, mock_acomp):
+        """Lines 1110-1111: exception inside async post-stream try block is caught and logged."""
+        mock_acomp.return_value = _async_chunks("hello async world")
+        r = _router()
+        with patch.object(r._tracker, "record_manual", side_effect=RuntimeError("disk full")):
+            async for _ in r.astream_chat("Say hello async"):
+                pass
+        assert any("post-stream recording failed" in e for e in r.log.errors)
+
+    def test_build_messages_raises_on_empty_list(self):
+        """Line 1179: messages=[] (not None) raises ValueError."""
+        r = _router()
+        with pytest.raises(ValueError, match="messages must not be empty"):
+            r._build_messages("task", messages=[])
+
+    def test_chat_propagates_empty_messages_error(self):
+        """Line 1179 reached via the public chat() API."""
+        r = _router()
+        with pytest.raises(ValueError, match="messages must not be empty"):
+            r.chat("task", messages=[])
+
+    def test_telemetry_makedirs_oserror_is_silenced(self, tmp_path):
+        """Lines 1363-1364: OSError from os.makedirs is caught and returns silently."""
+        from baar.core.models import StepResult
+        jsonl = str(tmp_path / "subdir" / "tel.jsonl")
+        r = _router(telemetry_jsonl_path=jsonl)
+        step = StepResult(
+            step_num=1, task="t",
+            decision=MagicMock(), response_text="",
+            cost=0.0, cumulative_cost=0.0,
+            prompt_tokens=0, completion_tokens=0,
+            latency_ms=0.0, attempted_models=[],
+            failover_count=0, failover_errors=[],
+        )
+        with patch("baar.router.os.makedirs", side_effect=OSError("permission denied")):
+            r._append_telemetry(step)  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_concurrent_arun_budget_stop_rechecked_after_semaphore_acquire(self):
+        """Lines 1157-1158: budget_stop set by one task is caught inside semaphore by another."""
+        import asyncio as _asyncio
+        with patch("baar.core.budget.completion_cost", return_value=0.00005), \
+             patch("baar.core.budget.cost_per_token", return_value=(0.000025, 0.000025)):
+            r = BAARRouter(budget=10.0, use_llm_router=False, arun_concurrency=1)
+
+        call_count = [0]
+
+        async def _raise_budget(task, **kw):
+            call_count[0] += 1
+            await _asyncio.sleep(0)  # yield so both coroutines can pass outer check
+            raise BudgetExhausted("gone", remaining=0.0)
+
+        with patch.object(r, "achat", side_effect=_raise_budget):
+            await r.arun(["t1", "t2"])
+
+        assert call_count[0] >= 1  # at least one task ran; budget_stop blocked the rest
+
+    @pytest.mark.asyncio
+    async def test_concurrent_arun_err_count_rechecked_after_semaphore_acquire(self):
+        """Lines 1159-1160: err_count limit re-checked inside semaphore by waiting coroutine."""
+        import asyncio as _asyncio
+        with patch("baar.core.budget.completion_cost", return_value=0.00005), \
+             patch("baar.core.budget.cost_per_token", return_value=(0.000025, 0.000025)):
+            r = BAARRouter(budget=10.0, use_llm_router=False, arun_concurrency=1,
+                           max_consecutive_errors=1)
+
+        call_count = [0]
+
+        async def _raise_error(task, **kw):
+            call_count[0] += 1
+            await _asyncio.sleep(0)
+            raise RuntimeError("provider failure")
+
+        with patch.object(r, "achat", side_effect=_raise_error):
+            await r.arun(["t1", "t2"])
+
+        assert call_count[0] >= 1

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "baar-core"
-version = "0.5.1"
+version = "0.6.0"
 description = "Budget-Aware Agentic Routing — route LLM calls intelligently between cheap and powerful models with a hard budget cap."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,9 @@ dependencies = [
 [project.optional-dependencies]
 langchain = [
     "langchain-core>=0.1.0",
+]
+crewai = [
+    "crewai>=0.80.0",
 ]
 vercel = [
     "fastapi>=0.110.0",
