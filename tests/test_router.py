@@ -565,3 +565,60 @@ class TestPresets:
         cfg = BAARConfig.anthropic()
         assert cfg.complexity_threshold == 0.80
         assert cfg.routing_cache_enabled is True
+
+
+class TestCoverageGaps:
+    """Covers lines in baar/core/router.py not yet exercised elsewhere."""
+
+    def setup_method(self):
+        self.router = Router(use_llm_router=False)
+
+    def test_unit_conversion_fast_path(self):
+        decision = self.router.decide("32°F to Celsius", 0.0)
+        assert decision.tier == ModelTier.SMALL
+        assert "unit conversion" in decision.reason
+
+    def test_heuristic_medium_task_21_to_50_words(self):
+        # 27 words, no code/reasoning/multi-choice triggers
+        task = (
+            "What are the most popular tourist destinations in Europe "
+            "I want to visit several countries next year and would like "
+            "some recommendations for interesting places to see"
+        )
+        decision = self.router.decide(task, 0.0)
+        assert "medium task" in decision.reason
+
+    @pytest.mark.asyncio
+    async def test_async_routing_cache_hit_returns_true(self):
+        """Second identical async decision hits the cache (lines 409-410)."""
+        task = "What is the boiling point of water?"
+        await self.router.adecide(task, 0.0)
+        d2 = await self.router.adecide(task, 0.0)
+        assert d2.routing_cache_hit is True
+
+    def test_sync_routing_timeout_forwarded_to_llm(self):
+        """routing_timeout is added to kwargs in _compute_complexity_uncached (line 450)."""
+        with patch("baar.core.router.litellm.completion") as mock_comp:
+            mock_comp.return_value = MagicMock(
+                choices=[MagicMock(message=MagicMock(
+                    content='{"complexity":0.8,"reason":"hard","domain":"general","estimated_output_tokens":500}'
+                ))]
+            )
+            r = Router(use_llm_router=True, routing_timeout=7.0)
+            r._compute_complexity_uncached("Write a complex distributed system")
+        _, kwargs = mock_comp.call_args
+        assert kwargs.get("timeout") == 7.0
+
+    @pytest.mark.asyncio
+    async def test_async_routing_timeout_forwarded_to_llm(self):
+        """routing_timeout is added to kwargs in _acompute_complexity_uncached (line 473)."""
+        with patch("baar.core.router.litellm.acompletion") as mock_acomp:
+            mock_acomp.return_value = MagicMock(
+                choices=[MagicMock(message=MagicMock(
+                    content='{"complexity":0.8,"reason":"hard","domain":"general","estimated_output_tokens":500}'
+                ))]
+            )
+            r = Router(use_llm_router=True, routing_timeout=7.0)
+            await r._acompute_complexity_uncached("Write a complex distributed system")
+        _, kwargs = mock_acomp.call_args
+        assert kwargs.get("timeout") == 7.0
