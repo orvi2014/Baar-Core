@@ -2,6 +2,14 @@
 
 All notable changes to baar-core are documented here.
 
+## [0.7.1] — 2026-05-19
+
+### Security
+- **CVE-2026-33634** — exclude `litellm==1.82.7` and `litellm==1.82.8` from install-time
+  dependency resolution (`!=1.82.7,!=1.82.8`). Both versions contain a supply chain
+  compromise. The existing runtime block in `BAARRouter` is preserved as defence-in-depth,
+  but the install constraint ensures the compromised package is never downloaded.
+
 ## [0.7.0] — 2026-05-19
 
 ### Added
