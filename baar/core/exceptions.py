@@ -32,3 +32,15 @@ class TaskRejected(Exception):
         self.estimated_value = estimated_value
         self.estimated_cost_usd = estimated_cost_usd
         self.task = task
+
+
+class PolicyViolation(Exception):
+    """
+    Raised when a Policy Rule with action='block' matches before a call is made.
+    Distinct from BudgetExhausted — this is a governance block, not a spend block.
+    Zero network calls are made when this is raised.
+    """
+
+    def __init__(self, message: str, *, facts: dict = None):
+        super().__init__(message)
+        self.facts = facts or {}
