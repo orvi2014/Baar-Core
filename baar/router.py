@@ -18,9 +18,10 @@ from dataclasses import dataclass, replace
 from typing import AsyncGenerator, AsyncIterator, Callable, Iterator, List, Optional, Any
 
 from baar.core.router import Router, ModelTier
-from baar.core.budget import BudgetTracker, BudgetExceeded
-from baar.core.exceptions import TaskRejected, BudgetExhausted
+from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
+from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
+from baar.core.policy import Policy, PolicyAction
 from baar.core.stores import BudgetStore
 
 # ── Module-level litellm config (runs once on import) ─────────────────────────
@@ -191,6 +192,9 @@ class BAARConfig:
     routing_timeout: Optional[float] = None
     max_consecutive_errors: int = 1
     arun_concurrency: int = 1
+    policy: Optional[Policy] = None
+    window: Optional[BudgetWindow] = None
+    alerts: Optional[List[Alert]] = None
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -265,6 +269,9 @@ class BAARRouter:
         routing_timeout: Optional[float] = None,
         max_consecutive_errors: int = 1,
         arun_concurrency: int = 1,
+        policy: Optional[Policy] = None,
+        window: Optional[BudgetWindow] = None,
+        alerts: Optional[List[Alert]] = None,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -296,6 +303,9 @@ class BAARRouter:
             routing_timeout=routing_timeout,
             max_consecutive_errors=max_consecutive_errors,
             arun_concurrency=arun_concurrency,
+            policy=policy,
+            window=window,
+            alerts=alerts,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -353,7 +363,13 @@ class BAARRouter:
         self._arun_concurrency = max(1, int(config.arun_concurrency))
         self._step_counter: int = 0
 
-        self._tracker = BudgetTracker(total_budget=config.budget, store=config.store)
+        self._policy: Optional[Policy] = config.policy
+        self._tracker = BudgetTracker(
+            total_budget=config.budget,
+            store=config.store,
+            window=config.window,
+            alerts=config.alerts,
+        )
         self._router = Router(
             small_model=config.small_model,
             big_model=config.big_model,
@@ -455,7 +471,7 @@ class BAARRouter:
 
     # ── Sync execution ─────────────────────────────────────────────────────────
 
-    def chat(self, task: str, *, messages: Optional[List[dict]] = None) -> str:
+    def chat(self, task: str, *, messages: Optional[List[dict]] = None, context: Optional[dict] = None) -> str:
         """
         Execute a single routed chat call with hard financial guardrails.
 
@@ -528,11 +544,22 @@ class BAARRouter:
                 override_tier = ModelTier.BIG if override_model == self.big_model else ModelTier.SMALL
             decision = replace(decision, model=override_model, tier=override_tier)
 
+        # ── 2c. Policy evaluation ─────────────────────────────────────────────
+        if self._policy is not None:
+            decision = self._apply_policy(decision, context)
+
         # ── 3. BIG affordability check — downgrade if necessary ───────────────
         if decision.tier == ModelTier.BIG:
             try:
                 self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
             except BudgetExceeded as e:
+                if "[POLICY FORCE_BIG]" in decision.reason:
+                    warnings.warn(
+                        f"Policy requested force_big but budget is insufficient "
+                        f"(${self._tracker.remaining:.6f} remaining); downgrading to small model.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
                 decision = self._router.force_small(decision, str(e))
 
         # Final pre-flight check for the chosen model
@@ -615,6 +642,7 @@ class BAARRouter:
         task: str,
         *,
         messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
     ) -> Iterator[str]:
         """
         Streaming version of chat() — yields text chunks as they arrive.
@@ -680,10 +708,21 @@ class BAARRouter:
                 override_tier = ModelTier.BIG if override_model == self.big_model else ModelTier.SMALL
             decision = replace(decision, model=override_model, tier=override_tier)
 
+        # ── 1c. Policy evaluation ──────────────────────────────────────────────
+        if self._policy is not None:
+            decision = self._apply_policy(decision, context)
+
         if decision.tier == ModelTier.BIG:
             try:
                 self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
             except BudgetExceeded as e:
+                if "[POLICY FORCE_BIG]" in decision.reason:
+                    warnings.warn(
+                        f"Policy requested force_big but budget is insufficient "
+                        f"(${self._tracker.remaining:.6f} remaining); downgrading to small model.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
                 decision = self._router.force_small(decision, str(e))
 
         model_to_use = decision.model
@@ -777,7 +816,7 @@ class BAARRouter:
             finally:
                 self._tracker.cancel_reservation(reserved)
 
-    def run(self, tasks: List[str]) -> RoutingLog:
+    def run(self, tasks: List[str], *, context: Optional[dict] = None) -> RoutingLog:
         """
         Execute a series of tasks sequentially.
         Stops early if the hard budget cap is hit or max_consecutive_errors reached.
@@ -786,11 +825,11 @@ class BAARRouter:
         consecutive_errors = 0
         for task in tasks:
             try:
-                self.chat(task)
+                self.chat(task, context=context)
                 consecutive_errors = 0
             except (BudgetExceeded, BudgetExhausted):
                 break
-            except TaskRejected:
+            except (TaskRejected, PolicyViolation):
                 consecutive_errors = 0
                 continue
             except Exception as e:
@@ -802,7 +841,7 @@ class BAARRouter:
 
     # ── Async execution ────────────────────────────────────────────────────────
 
-    async def achat(self, task: str, *, messages: Optional[List[dict]] = None) -> str:
+    async def achat(self, task: str, *, messages: Optional[List[dict]] = None, context: Optional[dict] = None) -> str:
         """
         Async version of chat() — identical hard financial guardrails,
         non-blocking for asyncio / FastAPI / aiohttp applications.
@@ -870,11 +909,22 @@ class BAARRouter:
                 override_tier = ModelTier.BIG if override_model == self.big_model else ModelTier.SMALL
             decision = replace(decision, model=override_model, tier=override_tier)
 
+        # ── 2c. Policy evaluation ─────────────────────────────────────────────
+        if self._policy is not None:
+            decision = self._apply_policy(decision, context)
+
         # ── 3. BIG affordability check — downgrade if necessary ───────────────
         if decision.tier == ModelTier.BIG:
             try:
                 self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
             except BudgetExceeded as e:
+                if "[POLICY FORCE_BIG]" in decision.reason:
+                    warnings.warn(
+                        f"Policy requested force_big but budget is insufficient "
+                        f"(${self._tracker.remaining:.6f} remaining); downgrading to small model.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
                 decision = self._router.force_small(decision, str(e))
 
         model_to_use = decision.model
@@ -957,6 +1007,7 @@ class BAARRouter:
         task: str,
         *,
         messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Async streaming version of achat() — yields text chunks as they arrive.
@@ -1018,10 +1069,21 @@ class BAARRouter:
                 override_tier = ModelTier.BIG if override_model == self.big_model else ModelTier.SMALL
             decision = replace(decision, model=override_model, tier=override_tier)
 
+        # ── Policy evaluation ──────────────────────────────────────────────────
+        if self._policy is not None:
+            decision = self._apply_policy(decision, context)
+
         if decision.tier == ModelTier.BIG:
             try:
                 self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
             except BudgetExceeded as e:
+                if "[POLICY FORCE_BIG]" in decision.reason:
+                    warnings.warn(
+                        f"Policy requested force_big but budget is insufficient "
+                        f"(${self._tracker.remaining:.6f} remaining); downgrading to small model.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
                 decision = self._router.force_small(decision, str(e))
 
         model_to_use = decision.model
@@ -1112,7 +1174,7 @@ class BAARRouter:
             finally:
                 self._tracker.cancel_reservation(reserved)
 
-    async def arun(self, tasks: List[str]) -> RoutingLog:
+    async def arun(self, tasks: List[str], *, context: Optional[dict] = None) -> RoutingLog:
         """
         Async task execution. Stops early if the hard budget cap is hit.
         When arun_concurrency > 1, tasks run concurrently (bounded by semaphore).
@@ -1126,11 +1188,11 @@ class BAARRouter:
             consecutive_errors = 0
             for task in tasks:
                 try:
-                    await self.achat(task)
+                    await self.achat(task, context=context)
                     consecutive_errors = 0
                 except (BudgetExceeded, BudgetExhausted):
                     break
-                except TaskRejected:
+                except (TaskRejected, PolicyViolation):
                     consecutive_errors = 0
                     continue
                 except Exception as e:
@@ -1159,11 +1221,11 @@ class BAARRouter:
                     if err_count[0] >= self._max_consecutive_errors:  # pragma: no cover
                         return  # pragma: no cover
                     try:
-                        await self.achat(task)
+                        await self.achat(task, context=context)
                         err_count[0] = 0
                     except (BudgetExceeded, BudgetExhausted):
                         budget_stop.set()
-                    except TaskRejected:
+                    except (TaskRejected, PolicyViolation):
                         err_count[0] = 0
                     except Exception as e:
                         self._log.errors.append(f"{type(e).__name__}: {e}")
@@ -1173,6 +1235,41 @@ class BAARRouter:
         return self._log
 
     # ── Internal helpers ───────────────────────────────────────────────────────
+
+    def _apply_policy(self, decision, context: Optional[dict]) -> object:
+        """Evaluate the policy and mutate the routing decision accordingly."""
+        # System facts always win over user-supplied context keys.
+        facts = {
+            **(context or {}),
+            "model": decision.model,
+            "utilization": self._tracker.utilization,
+            "domain": decision.domain,
+            "complexity": decision.complexity_score,
+        }
+        action = self._policy.evaluate(facts)
+        if action == PolicyAction.BLOCK:
+            raise PolicyViolation(
+                f"Policy blocked call to '{decision.model}'",
+                facts=facts,
+            )
+        if action == PolicyAction.FORCE_SMALL:
+            # Use replace() directly so forced_by_budget stays False —
+            # this is a governance decision, not a budget constraint.
+            return replace(
+                decision,
+                tier=ModelTier.SMALL,
+                model=self.small_model,
+                reason=f"[POLICY FORCE_SMALL] {decision.reason}",
+                forced_by_budget=False,
+            )
+        if action == PolicyAction.FORCE_BIG:
+            return replace(
+                decision,
+                tier=ModelTier.BIG,
+                model=self.big_model,
+                reason=f"[POLICY FORCE_BIG] {decision.reason}",
+            )
+        return decision  # ALLOW or no match
 
     def _build_messages(self, task: str, messages: Optional[List[dict]] = None) -> list:
         if messages is not None and not messages:

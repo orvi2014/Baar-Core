@@ -4,13 +4,123 @@ This is the financial source of truth for the entire system.
 """
 
 import math
+import threading
 import warnings
 from collections import deque
-from dataclasses import dataclass
-from typing import Optional, Union
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Callable, List, Optional, Union
 from litellm import completion_cost, cost_per_token
 
-from baar.core.stores import BudgetStore, MemoryBudgetStore
+from baar.core.stores import BudgetStore, MemoryBudgetStore, FileBudgetStore, SQLiteBudgetStore
+
+class BudgetWindow(str, Enum):
+    """
+    Time window for automatic budget reset.
+
+    Pass to BudgetTracker to enforce daily, monthly, or hourly spend caps
+    instead of a lifetime total. Requires a persistent store (SQLiteBudgetStore
+    or FileBudgetStore) to survive process restarts across window boundaries.
+
+    Example::
+
+        tracker = BudgetTracker(
+            total_budget=0.10,
+            window=BudgetWindow.DAILY,
+            store=SQLiteBudgetStore("budgets.db", namespace="user:alice"),
+        )
+    """
+    HOURLY = "hourly"
+    DAILY = "daily"
+    MONTHLY = "monthly"
+
+
+@dataclass
+class Alert:
+    """
+    Budget threshold alert. Fires ``callback`` when utilization crosses ``threshold``.
+
+    Args:
+        threshold: Utilization fraction 0.0–1.0 that triggers the alert.
+        callback:  Called with a dict: {threshold, utilization, spent, remaining, total_budget}.
+        once:      If True (default), fires only the first time the threshold is crossed.
+
+    Example::
+
+        Alert(threshold=0.8, callback=lambda info: print("80% used!"))
+    """
+    threshold: float
+    callback: Callable
+    once: bool = True
+    _fired: bool = field(default=False, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self.threshold = max(0.0, min(1.0, float(self.threshold)))
+
+
+class WindowedBudgetStore(BudgetStore):
+    """
+    Wraps any BudgetStore to automatically reset spend each billing window.
+    A fresh sub-store is created per time period using the same backend;
+    historical period data is preserved (not deleted).
+
+    Prefer constructing via BudgetTracker(window=...) rather than directly.
+    """
+
+    def __init__(self, store: BudgetStore, window: BudgetWindow) -> None:
+        self._base_store = store
+        self._window = window
+        self._current_key: Optional[str] = None
+        self._current_store: BudgetStore = store
+        self._lock = threading.Lock()
+
+    def _period_key(self) -> str:
+        now = datetime.now(timezone.utc)
+        if self._window == BudgetWindow.HOURLY:
+            return now.strftime("%Y-%m-%dT%H")
+        elif self._window == BudgetWindow.DAILY:
+            return now.strftime("%Y-%m-%d")
+        return now.strftime("%Y-%m")
+
+    def _get_store(self) -> BudgetStore:
+        key = self._period_key()
+        with self._lock:
+            if key == self._current_key:
+                return self._current_store
+            self._current_store = self._make_store(key)
+            self._current_key = key
+            return self._current_store
+
+    def _make_store(self, key: str) -> BudgetStore:
+        base = self._base_store
+        if isinstance(base, SQLiteBudgetStore):
+            return SQLiteBudgetStore(base._db_path, namespace=f"{base._namespace}:{key}")
+        if isinstance(base, FileBudgetStore):
+            return FileBudgetStore(base._path, namespace=f"{base._namespace}:{key}")
+        if isinstance(base, MemoryBudgetStore):
+            return MemoryBudgetStore()
+        raise TypeError(
+            f"WindowedBudgetStore does not know how to create a period store for "
+            f"{type(base).__name__}. Use SQLiteBudgetStore, FileBudgetStore, or "
+            "MemoryBudgetStore, or subclass WindowedBudgetStore and override _make_store."
+        )
+
+    def get_spent(self) -> float:
+        return self._get_store().get_spent()
+
+    def add_spent(self, amount: float) -> float:
+        return self._get_store().add_spent(amount)
+
+    def set_spent(self, value: float) -> None:
+        self._get_store().set_spent(value)
+
+    def reset(self) -> None:
+        self._get_store().reset()
+
+    def atomic_check_and_reserve(self, total_budget: float, amount: float) -> bool:
+        return self._get_store().atomic_check_and_reserve(total_budget, amount)
+
 
 # Reservation/cancellation methods allow achat() to atomically claim budget
 # before the async LLM call, preventing concurrent callers from both passing
@@ -57,11 +167,19 @@ class BudgetTracker:
         total_budget: float,
         store: Optional[BudgetStore] = None,
         max_records: Optional[int] = None,
+        window: Optional[BudgetWindow] = None,
+        alerts: Optional[List[Alert]] = None,
     ) -> None:
         self.total_budget = total_budget
-        self._store: BudgetStore = store if store is not None else MemoryBudgetStore()
+        base_store: BudgetStore = store if store is not None else MemoryBudgetStore()
+        self._store: BudgetStore = (
+            WindowedBudgetStore(base_store, window) if window is not None else base_store
+        )
         self._records: Union[list, deque] = deque(maxlen=max_records) if max_records is not None else []
         self._step: int = 0
+        self._alerts: List[Alert] = list(alerts) if alerts else []
+        self._alert_lock = threading.Lock()
+        self._last_window_key: Optional[str] = None
 
     # _spent is kept as a property so existing tests that do
     # `tracker._spent = X` continue to work — the assignment is forwarded
@@ -193,6 +311,45 @@ class BudgetTracker:
         """
         self._store.add_spent(-amount)
 
+    def reset(self) -> None:
+        """Reset spend to 0.0 and re-arm all once=True alerts."""
+        self._store.reset()
+        with self._alert_lock:
+            for a in self._alerts:
+                a._fired = False
+
+    def _fire_alerts(self) -> None:
+        if not self._alerts:
+            return
+        # Re-arm once=True alerts when the billing window rolls over.
+        if isinstance(self._store, WindowedBudgetStore):
+            current_key = self._store._current_key
+            with self._alert_lock:
+                if current_key is not None and current_key != self._last_window_key:
+                    for a in self._alerts:
+                        a._fired = False
+                    self._last_window_key = current_key
+        utilization = self.utilization
+        with self._alert_lock:
+            to_fire = [
+                a for a in self._alerts
+                if utilization >= a.threshold and not (a.once and a._fired)
+            ]
+            for a in to_fire:
+                if a.once:
+                    a._fired = True
+        info = {
+            "utilization": utilization,
+            "spent": self.spent,
+            "remaining": self.remaining,
+            "total_budget": self.total_budget,
+        }
+        for a in to_fire:
+            try:
+                a.callback({**info, "threshold": a.threshold})
+            except Exception:
+                pass
+
     def record(self, response, model: str) -> SpendRecord:
         """Record actual spend after a successful call."""
         self._step += 1
@@ -209,6 +366,7 @@ class BudgetTracker:
             cumulative_cost=new_spent,
         )
         self._records.append(rec)
+        self._fire_alerts()
         return rec
 
     def record_manual(self, model: str, prompt_tokens: int, completion_tokens: int) -> SpendRecord:
@@ -226,6 +384,13 @@ class BudgetTracker:
             )
             cost = float(in_cost + out_cost)
         except Exception:
+            warnings.warn(
+                f"BudgetTracker: no pricing data for model '{model}' in record_manual. "
+                "Spend recorded as $0.00. For accurate tracking, register real pricing with "
+                "litellm.register_model() before using BAARRouter.",
+                UserWarning,
+                stacklevel=2,
+            )
             cost = 0.0
         new_spent = self._store.add_spent(cost)
         rec = SpendRecord(
@@ -237,6 +402,7 @@ class BudgetTracker:
             cumulative_cost=new_spent,
         )
         self._records.append(rec)
+        self._fire_alerts()
         return rec
 
     @property

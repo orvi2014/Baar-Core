@@ -2,6 +2,44 @@
 
 All notable changes to baar-core are documented here.
 
+## [0.7.0] — 2026-05-19
+
+### Added
+- **Policy engine** (`baar.core.policy`) — declarative governance rules evaluated before
+  every LLM call. Rules match on any context key or system fact (model, utilization,
+  domain, complexity) and produce `block`, `force_small`, `force_big`, or `allow` actions.
+  First-match wins; raises `PolicyViolation` (with a `facts` dict) on block.
+- **Time-windowed budgets** (`BudgetWindow`) — scope spend caps to `HOURLY`, `DAILY`, or
+  `MONTHLY` windows via `BAARRouter(window=BudgetWindow.DAILY)`. Backed by
+  `WindowedBudgetStore`, which auto-resets spend each period while preserving historical
+  data. Works with all three store backends (Memory, File, SQLite).
+- **Alert hooks** (`Alert`) — fire a callback when utilization crosses a threshold.
+  `once=True` (default) fires only the first time per window; `once=False` fires on every
+  check while above threshold. Alerts re-arm automatically on window rollover and on
+  `BudgetTracker.reset()`.
+- `BudgetTracker.reset()` — resets spend to zero and re-arms all `once=True` alerts.
+- New exports on `baar`: `BudgetWindow`, `Alert`, `WindowedBudgetStore`, `Policy`,
+  `PolicyAction`, `Rule`, `PolicyViolation`.
+
+### Changed
+- `BAARRouter` accepts three new keyword args: `policy`, `window`, `alerts`.
+- Policy-forced model changes set `forced_by_budget=False` and prefix the decision reason
+  with `[POLICY FORCE_SMALL]` / `[POLICY FORCE_BIG]` for clear audit trails.
+- When a `force_big` policy rule is overridden by budget constraint, a `UserWarning` is
+  emitted rather than silently downgrading.
+- `PolicyViolation` is treated like `TaskRejected` in `run()`/`arun()` — the task is
+  skipped without incrementing the consecutive-error counter.
+- `record_manual()` emits a `UserWarning` instead of silently recording $0 when pricing
+  data is unavailable for the model.
+
+## [0.6.0] — 2026-05-19
+
+### Added
+- **Hermes Agent integration** (`baar.integrations.hermes`) — budget-aware wrapper for
+  NousResearch Hermes-style tool-calling agents.
+- **CrewAI integration** (`baar.integrations.crewai`) — `BaarCrewCallback` enforces spend
+  caps across CrewAI task runs; raises `BudgetExhausted` before runaway crews overshoot.
+
 ## [0.5.1] — 2026-05-12
 
 ### Added
