@@ -213,6 +213,31 @@ class TestCostDeduction:
         my_tool()
         assert router.remaining == pytest.approx(1.0 - 0.15)
 
+    def test_negative_cost_per_call_does_not_increase_remaining(self):
+        # A negative cost_per_call must not decrease spent (which would make
+        # remaining exceed total_budget and break budget integrity).
+        router = make_router(budget=1.0)
+
+        @baar_guard(router=router, cost_per_call=-0.10)
+        def my_tool():
+            return "ok"
+
+        before = router.remaining
+        my_tool()
+        assert router.remaining == pytest.approx(before)
+        assert router.remaining <= router.budget
+
+    def test_zero_cost_per_call_does_not_deduct(self):
+        router = make_router(budget=1.0)
+
+        @baar_guard(router=router, cost_per_call=0.0)
+        def my_tool():
+            return "ok"
+
+        before = router.remaining
+        my_tool()
+        assert router.remaining == pytest.approx(before)
+
 
 # ── Async support ─────────────────────────────────────────────────────────────
 
