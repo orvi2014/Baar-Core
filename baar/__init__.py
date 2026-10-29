@@ -8,7 +8,7 @@ from importlib.metadata import version, PackageNotFoundError
 try:
     __version__ = version("baar-core")
 except PackageNotFoundError:  # pragma: no cover
-    __version__ = "0.7.1"  # fallback when running from source without install
+    __version__ = "0.8.0"  # fallback when running from source without install
 
 from baar.router import BAARRouter, BAARConfig, token_counter
 from baar.core.budget import BudgetExceeded, BudgetTracker, BudgetWindow, Alert, WindowedBudgetStore
@@ -16,6 +16,7 @@ from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 from baar.core.policy import Policy, PolicyAction, Rule
+from baar.core.loop import LoopDetector, LoopDetected, LoopEvent
 from baar.core.stores import BudgetStore, MemoryBudgetStore, FileBudgetStore, SQLiteBudgetStore
 
 __all__ = [
@@ -38,6 +39,9 @@ __all__ = [
     "Policy",
     "PolicyAction",
     "Rule",
+    "LoopDetector",
+    "LoopDetected",
+    "LoopEvent",
     "BudgetStore",
     "MemoryBudgetStore",
     "FileBudgetStore",
