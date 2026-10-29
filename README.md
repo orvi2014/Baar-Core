@@ -283,18 +283,18 @@ It refuses the call that would continue a loop **before it runs**, and warns `on
 
 ### Loop eval
 
-`python benchmarks/loop_eval.py` replays 165 labeled, deterministic agent traces (no API keys): 75 loops (exact repeats, error retries, ping-pong, repeats with a changing request id, rephrased) and 90 healthy runs built to look like loops (polling, pagination, rate-limit retries, re-reading a changed file, long research). Loops run until something stops them; the run budget is sized above the longest healthy run.
+`python benchmarks/loop_eval.py` replays 180 labeled, deterministic agent traces (no API keys): 75 loops (exact repeats, error retries, ping-pong, repeats with a changing request id, rephrased) and 105 healthy runs built to look like loops (polling, pagination, rate-limit retries, a flaky API failing on and off, re-reading a changed file, long research). Loops run until something stops them; the run budget is sized above the longest healthy run.
 
 | Method | Caught | False stops | Median wasted calls | $ wasted |
 |---|---|---|---|---|
-| detector | 80.0% | 16.7% | 3 | $16.07 |
-| detector+exempt | 80.0% | 0.0% | 3 | $16.07 |
-| detector+budget | 100.0% | 0.0% | 3 | $7.07 |
-| call_hash_only | 80.0% | 27.8% | 3 | $16.52 |
-| max_calls | 100.0% | 33.3% | 7 | $5.07 |
-| budget_only | 100.0% | 0.0% | 35 | $26.16 |
+| detector | 80.0% | 14.3% | 3 | $16.06 |
+| detector+exempt | 80.0% | 0.0% | 3 | $16.06 |
+| detector+budget | 100.0% | 0.0% | 3 | $7.06 |
+| call_hash_only | 80.0% | 39.0% | 3 | $16.51 |
+| max_calls | 100.0% | 41.0% | 7 | $5.12 |
+| budget_only | 100.0% | 0.0% | 35 | $26.14 |
 
-`max_calls` wastes less money only by also stopping a third of healthy runs (pagination, long research). `detector+budget` is how you'd ship it: `exempt_tools=["job_status"]` plus a $0.40 run budget. Without the exemption, the 6-identical-result polls are stopped (the 16.7% false stops above). Overhead is about 8.8 µs per tool call. Per-category results: `python benchmarks/loop_eval.py`.
+`max_calls` wastes less money only by also stopping 41% of healthy runs (pagination, long research, the flaky API). Counting calls without their results stops every flaky-API run; the detector stops none, because errors only count in a row. `detector+budget` is how you'd ship it: `exempt_tools=["job_status"]` plus a $0.40 run budget. Without the exemption, the 6-identical-result polls are stopped (the 14.3% false stops above). Overhead is about 10 µs per tool call. The headline holds for every generator seed from 1 to 50 (100% caught, 0% false stops, median 3 wasted calls). Per-category results: `python benchmarks/loop_eval.py`.
 
 
 ## MCP server (Claude Code / Cursor)

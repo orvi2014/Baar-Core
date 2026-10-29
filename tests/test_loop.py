@@ -177,6 +177,31 @@ class TestEvents:
             LoopDetector(max_repeats=0)
 
 
+# ── concurrency ───────────────────────────────────────────────────────────────
+
+class TestConcurrency:
+    def test_counts_stay_exact_across_threads(self):
+        import threading
+
+        d = LoopDetector(max_repeats=800, warn=False)
+        barrier = threading.Barrier(8)
+
+        def worker():
+            barrier.wait()
+            for _ in range(100):
+                d.after("s", {}, result="r")
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert d.steps == 800
+        with pytest.raises(LoopDetected) as exc:
+            d.before("s", {})
+        assert exc.value.count == 800
+
+
 # ── baar_guard integration ────────────────────────────────────────────────────
 
 def make_router() -> BAARRouter:

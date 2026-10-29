@@ -37,3 +37,18 @@ def test_detector_wastes_less_than_the_budget_alone():
 def test_result_hashing_beats_call_hashing_on_false_stops():
     rows = _rows()
     assert rows["detector"]["false_stop_pct"] < rows["call_hash_only"]["false_stop_pct"]
+
+
+def test_a_flaky_api_is_never_mistaken_for_a_stuck_one():
+    rows = _rows()
+    assert rows["detector"]["by_category"]["flaky_api"] == "0/15"
+    # Counting calls instead of outcomes stops every one of them.
+    assert rows["call_hash_only"]["by_category"]["flaky_api"] == "15/15"
+
+
+def test_results_hold_across_seeds():
+    # The headline numbers must not depend on the generator's luck.
+    for seed in range(1, 21):
+        r = {x["method"]: x for x in evaluate(seed)}["detector+budget"]
+        assert r["caught_pct"] == 100.0, seed
+        assert r["false_stop_pct"] == 0.0, seed

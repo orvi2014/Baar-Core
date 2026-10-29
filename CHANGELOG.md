@@ -18,10 +18,11 @@ All notable changes to baar-core are documented here.
 - `baar_guard(loop_detector=...)` — feeds each tool call's arguments and result
   (or error) to the detector; a refused call is not made and does not count
   against `max_calls`.
-- `benchmarks/loop_eval.py` — 165 labeled deterministic traces (75 loops, 90
-  healthy look-alikes) comparing the detector with call-hash counting,
-  `max_calls` and a run budget. Detector + `exempt_tools` + budget: 100% of loops
-  stopped, 0% of healthy runs stopped, median 3 wasted calls.
+- `benchmarks/loop_eval.py` — 180 labeled deterministic traces (75 loops, 105
+  healthy look-alikes, including a flaky API failing on and off) comparing the
+  detector with call-hash counting, `max_calls` and a run budget. Detector +
+  `exempt_tools` + budget: 100% of loops stopped, 0% of healthy runs stopped,
+  median 3 wasted calls, for every seed from 1 to 50.
 - New exports on `baar`: `LoopDetector`, `LoopDetected`, `LoopEvent`.
 
 ## [0.7.1] — 2026-05-19

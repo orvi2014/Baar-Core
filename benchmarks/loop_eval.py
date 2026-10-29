@@ -24,6 +24,8 @@ Healthy traces that look like loops:
   long_poll      a job polled with 6 identical "running" before done
   pagination     one tool, new cursor each time
   retry_429      one or two rate-limit errors, then success
+  flaky_api      the same call failing on and off (never 3 times in a row)
+                 while it keeps succeeding in between
   reread         the same file read again after it changed
   research       many different searches
 
@@ -70,7 +72,9 @@ MAX_CALLS = 8
 CALL_HASH_LIMIT = 4
 
 LOOP_CATEGORIES = ["exact_repeat", "error_retry", "ping_pong", "volatile_args", "rephrased"]
-HEALTHY_CATEGORIES = ["poll_progress", "long_poll", "pagination", "retry_429", "reread", "research"]
+HEALTHY_CATEGORIES = [
+    "poll_progress", "long_poll", "pagination", "retry_429", "flaky_api", "reread", "research",
+]
 
 
 @dataclass
@@ -155,6 +159,16 @@ def make_healthy(category: str, rng: random.Random) -> Trace:
         for _ in range(rng.randint(1, 2)):
             steps.append(Step("crm_lookup", {"email": "a@b.co"}, error="RateLimitError: 429"))
         steps.append(Step("crm_lookup", {"email": "a@b.co"}, result="contact #42"))
+    elif category == "flaky_api":
+        # Intermittent failures: at most 2 in a row, with successes between.
+        failures_in_a_row = 0
+        for i in range(rng.randint(8, 14)):
+            if failures_in_a_row < 2 and rng.random() < 0.5:
+                steps.append(Step("inventory", {"sku": "A-1"}, error="ConnectionError: reset by peer"))
+                failures_in_a_row += 1
+            else:
+                steps.append(Step("inventory", {"sku": "A-1"}, result=f"stock {100 - i}"))
+                failures_in_a_row = 0
     elif category == "reread":
         for v in range(rng.randint(3, 6)):
             steps.append(Step("read_file", {"path": "app.py"}, result=f"version {v}"))
