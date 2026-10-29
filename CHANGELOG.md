@@ -2,6 +2,29 @@
 
 All notable changes to baar-core are documented here.
 
+## [0.8.0] — 2026-10-30
+
+### Added
+- **Loop detection** (`baar.core.loop`) — `LoopDetector` watches an agent run and
+  refuses the call that would continue a loop *before it runs*, raising
+  `LoopDetected` (with `pattern`, `tool_name`, `count`). Each step is reduced to
+  (tool, normalized arguments) → hash of the result or error, so repetition that
+  makes progress is never counted. Patterns: `repeat` (same call, same result,
+  `max_repeats=4`), `error` (same call, same error in a row, `max_error_repeats=3`;
+  a success resets it), `ping_pong` (two steps alternating, `max_ping_pong=3`
+  cycles). `on_loop` gets a `LoopEvent` warning one step before a stop.
+  Options: `exempt_tools`, `ignore_args`, `normalize_result`, `warn`; `tighten()`
+  after history summarization; `reset()` per run. Thread-safe.
+- `baar_guard(loop_detector=...)` — feeds each tool call's arguments and result
+  (or error) to the detector; a refused call is not made and does not count
+  against `max_calls`.
+- `benchmarks/loop_eval.py` — 180 labeled deterministic traces (75 loops, 105
+  healthy look-alikes, including a flaky API failing on and off) comparing the
+  detector with call-hash counting, `max_calls` and a run budget. Detector +
+  `exempt_tools` + budget: 100% of loops stopped, 0% of healthy runs stopped,
+  median 3 wasted calls, for every seed from 1 to 50.
+- New exports on `baar`: `LoopDetector`, `LoopDetected`, `LoopEvent`.
+
 ## [0.7.1] — 2026-05-19
 
 ### Security

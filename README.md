@@ -240,6 +240,63 @@ Works with OpenAI Codex CLI — set `openai_base_url = "http://localhost:8000/v1
 Full examples: [tool_guard.py](examples/tool_guard.py) · [claude_tool_guard.py](examples/claude_tool_guard.py) · [openai_tool_guard.py](examples/openai_tool_guard.py)
 
 
+## Loop detection
+
+A budget stops a looping agent once the money is gone. `LoopDetector` stops it after a few wasted calls. It watches what each tool call **returned**, not just that it was called, so an agent repeating a call that keeps giving the same answer is stopped while the same call making progress (a job going `queued → running → done`, a search with a new cursor) is left alone.
+
+```python
+from baar import BAARRouter, LoopDetector, LoopDetected
+from baar.integrations.tools import baar_guard
+
+router = BAARRouter(budget=0.50)
+loops = LoopDetector(on_loop=lambda e: log.warning("possible loop: %s", e))  # one per run
+
+@baar_guard(router=router, loop_detector=loops)
+def web_search(query: str) -> str:
+    return search_api(query)
+
+@baar_guard(router=router, loop_detector=loops)
+def read_file(path: str) -> str:
+    return open(path).read()
+
+try:
+    result = web_search(query)
+except LoopDetected as e:
+    result = f"Stopped: '{e.tool_name}' {e.pattern} loop ({e.count}x). Try a different approach."
+```
+
+It refuses the call that would continue a loop **before it runs**, and warns `on_loop` one step earlier. Three patterns, with defaults from OpenHands' StuckDetector:
+
+| Pattern | Refused when | Default |
+|---|---|---|
+| `repeat` | the same call already returned the same result N times (anywhere in the run) | `max_repeats=4` |
+| `error` | the same call failed the same way N times in a row (a success resets it) | `max_error_repeats=3` |
+| `ping_pong` | two steps alternated with the same results for N full cycles | `max_ping_pong=3` |
+
+- `exempt_tools=["job_status"]` — never count a tool that legitimately returns the same thing many times (status polls).
+- `ignore_args=["request_id", "timestamp"]` — drop volatile arguments, at any depth, before comparing.
+- `normalize_result=fn` — map a result before hashing, e.g. to drop a timestamp it carries.
+- `loops.tighten()` — lower every threshold by one after summarizing the agent's history (summarization roughly doubles looping, per DeLoop).
+- Not a framework user? Call `loops.before(tool, args)` and `loops.after(tool, args, result=...)` (or `error=exc`) yourself.
+
+**What it can't catch:** a loop that rephrases itself every step (new wording, same empty result) never repeats exactly. Keep a run budget for those: the two together stop every loop in the eval below without stopping a healthy run.
+
+### Loop eval
+
+`python benchmarks/loop_eval.py` replays 180 labeled, deterministic agent traces (no API keys): 75 loops (exact repeats, error retries, ping-pong, repeats with a changing request id, rephrased) and 105 healthy runs built to look like loops (polling, pagination, rate-limit retries, a flaky API failing on and off, re-reading a changed file, long research). Loops run until something stops them; the run budget is sized above the longest healthy run.
+
+| Method | Caught | False stops | Median wasted calls | $ wasted |
+|---|---|---|---|---|
+| detector | 80.0% | 14.3% | 3 | $16.06 |
+| detector+exempt | 80.0% | 0.0% | 3 | $16.06 |
+| detector+budget | 100.0% | 0.0% | 3 | $7.06 |
+| call_hash_only | 80.0% | 39.0% | 3 | $16.51 |
+| max_calls | 100.0% | 41.0% | 7 | $5.12 |
+| budget_only | 100.0% | 0.0% | 35 | $26.14 |
+
+`max_calls` wastes less money only by also stopping 41% of healthy runs (pagination, long research, the flaky API). Counting calls without their results stops every flaky-API run; the detector stops none, because errors only count in a row. `detector+budget` is how you'd ship it: `exempt_tools=["job_status"]` plus a $0.40 run budget. Without the exemption, the 6-identical-result polls are stopped (the 14.3% false stops above). Overhead is about 10 µs per tool call. The headline holds for every generator seed from 1 to 50 (100% caught, 0% false stops, median 3 wasted calls). Per-category results: `python benchmarks/loop_eval.py`.
+
+
 ## MCP server (Claude Code / Cursor)
 
 `examples/mcp_server.py` exposes three budget-guarded tools to any MCP client — no API key required on the client side.

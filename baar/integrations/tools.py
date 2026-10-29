@@ -4,6 +4,7 @@ baar/integrations/tools.py — Tool execution guards.
 baar_guard wraps any callable (sync or async) with:
   - Call limit   : raises ToolCallLimitExceeded after max_calls invocations
   - Budget gate  : raises BudgetExhausted if router.remaining < min_budget
+  - Loop check   : raises LoopDetected before a call that would repeat a loop
   - Cost tracking: deducts cost_per_call from budget after each successful call
 
 Usage::
@@ -29,6 +30,9 @@ Args:
     cost_per_call: Fixed USD amount deducted from budget after each successful call.
                    None = no deduction (use this for tools whose cost is tracked
                    via LLM calls inside them — avoid double-counting).
+    loop_detector: A LoopDetector shared by the run's tools. Each call's
+                   arguments and result (or error) are fed to it; a call that
+                   would continue a loop raises LoopDetected and is not made.
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ from typing import Any, Callable, Optional
 
 from baar.router import BAARRouter
 from baar.core.exceptions import BudgetExhausted
+from baar.core.loop import LoopDetector
 
 
 class ToolCallLimitExceeded(RuntimeError):
@@ -59,6 +64,7 @@ def baar_guard(
     max_calls: Optional[int] = None,
     min_budget: Optional[float] = None,
     cost_per_call: Optional[float] = None,
+    loop_detector: Optional[LoopDetector] = None,
 ) -> Callable:
     """
     Decorator factory that wraps a tool function with call and budget limits.
@@ -70,20 +76,41 @@ def baar_guard(
     Checks are applied in this order (first failure wins):
       1. Call limit  — ToolCallLimitExceeded
       2. Budget gate — BudgetExhausted
-      3. Execute function
-      4. Cost deduction (only on success)
+      3. Loop check  — LoopDetected
+      4. Execute function (its result or error is reported to the detector)
+      5. Cost deduction (only on success)
     """
 
     def decorator(fn: Callable) -> Callable:
+        try:
+            sig: Optional[inspect.Signature] = inspect.signature(fn)
+        except (TypeError, ValueError):
+            sig = None
+
+        def arguments(args: tuple, kwargs: dict) -> Any:
+            if sig is not None:
+                try:
+                    return dict(sig.bind_partial(*args, **kwargs).arguments)
+                except TypeError:
+                    pass
+            return {"args": list(args), "kwargs": kwargs}
+
         if inspect.iscoroutinefunction(fn):
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 _preflight(async_wrapper, fn.__name__, router, max_calls, min_budget)
+                call_args = arguments(args, kwargs) if loop_detector else None
+                if loop_detector:
+                    loop_detector.before(fn.__name__, call_args)
                 try:
                     result = await fn(*args, **kwargs)
-                except Exception:
+                except Exception as exc:
+                    if loop_detector:
+                        loop_detector.after(fn.__name__, call_args, error=exc)
                     raise
                 else:
+                    if loop_detector:
+                        loop_detector.after(fn.__name__, call_args, result=result)
                     async_wrapper._call_count += 1
                     _deduct(router, cost_per_call)
                     return result
@@ -95,11 +122,18 @@ def baar_guard(
             @functools.wraps(fn)
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 _preflight(sync_wrapper, fn.__name__, router, max_calls, min_budget)
+                call_args = arguments(args, kwargs) if loop_detector else None
+                if loop_detector:
+                    loop_detector.before(fn.__name__, call_args)
                 try:
                     result = fn(*args, **kwargs)
-                except Exception:
+                except Exception as exc:
+                    if loop_detector:
+                        loop_detector.after(fn.__name__, call_args, error=exc)
                     raise
                 else:
+                    if loop_detector:
+                        loop_detector.after(fn.__name__, call_args, result=result)
                     sync_wrapper._call_count += 1
                     _deduct(router, cost_per_call)
                     return result
