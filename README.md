@@ -265,15 +265,18 @@ except LoopDetected as e:
     result = f"Stopped: '{e.tool_name}' {e.pattern} loop ({e.count}x). Try a different approach."
 ```
 
-It refuses the call that would continue a loop **before it runs**, and warns `on_loop` one step earlier. Three patterns, with defaults from OpenHands' StuckDetector:
+It refuses the call that would continue a loop **before it runs**. One step earlier it **tells the model**: on the first repeat, `baar_guard` adds a note to the tool's string result (`[baar] The tool 'web_search' has returned the same result 2 times… Change the arguments, use a different tool, or answer with what you already have.`), and `on_loop` gets a warning. In a live benchmark, the note was what mattered: the model changed course in 19 of 20 runs, while stopping without telling it did worse than no detection at all. Pass `loop_nudge=False` to `baar_guard` to leave results untouched; non-string results are never changed.
+
+Three patterns:
 
 | Pattern | Refused when | Default |
 |---|---|---|
-| `repeat` | the same call already returned the same result N times (anywhere in the run) | `max_repeats=4` |
+| `repeat` | the same call already returned the same result N times (anywhere in the run) | `max_repeats=2` (the 3rd identical call is refused) |
 | `error` | the same call failed the same way N times in a row (a success resets it) | `max_error_repeats=3` |
 | `ping_pong` | two steps alternated with the same results for N full cycles | `max_ping_pong=3` |
 
-- `exempt_tools=["job_status"]` — never count a tool that legitimately returns the same thing many times (status polls).
+- **Waiting is not looping:** a short result (≤ 200 characters) saying `running`, `pending`, `queued`, `in progress`, `processing`, `booting`, `starting`, `initializing`, `waiting` or `not ready` never counts, so polling a job isn't stopped. `in_progress=re.compile(...)` changes the words; `in_progress=False` counts them.
+- `exempt_tools=["job_status"]` — never count a tool that legitimately returns the same thing many times.
 - `ignore_args=["request_id", "timestamp"]` — drop volatile arguments, at any depth, before comparing.
 - `normalize_result=fn` — map a result before hashing, e.g. to drop a timestamp it carries.
 - `loops.tighten()` — lower every threshold by one after summarizing the agent's history (summarization roughly doubles looping, per DeLoop).
@@ -287,14 +290,14 @@ It refuses the call that would continue a loop **before it runs**, and warns `on
 
 | Method | Caught | False stops | Median wasted calls | $ wasted |
 |---|---|---|---|---|
-| detector | 80.0% | 14.3% | 3 | $16.06 |
-| detector+exempt | 80.0% | 0.0% | 3 | $16.06 |
-| detector+budget | 100.0% | 0.0% | 3 | $7.06 |
+| detector | 80.0% | 0.0% | 2 | $15.16 |
+| detector+exempt | 80.0% | 0.0% | 2 | $15.16 |
+| detector+budget | 100.0% | 0.0% | 2 | $6.16 |
 | call_hash_only | 80.0% | 39.0% | 3 | $16.51 |
 | max_calls | 100.0% | 41.0% | 7 | $5.12 |
 | budget_only | 100.0% | 0.0% | 35 | $26.14 |
 
-`max_calls` wastes less money only by also stopping 41% of healthy runs (pagination, long research, the flaky API). Counting calls without their results stops every flaky-API run; the detector stops none, because errors only count in a row. `detector+budget` is how you'd ship it: `exempt_tools=["job_status"]` plus a $0.40 run budget. Without the exemption, the 6-identical-result polls are stopped (the 14.3% false stops above). Overhead is about 10 µs per tool call. The headline holds for every generator seed from 1 to 50 (100% caught, 0% false stops, median 3 wasted calls). Per-category results: `python benchmarks/loop_eval.py`.
+`max_calls` wastes less money only by also stopping 41% of healthy runs (pagination, long research, the flaky API). Counting calls without their results stops every flaky-API run; the detector stops none, because errors only count in a row. `detector+budget` is how you'd ship it: the detector plus a $0.40 run budget. The 6-identical-`running` polls are no longer stopped even without `exempt_tools` (they were 14.3% false stops before 0.9). Overhead is about 10 µs per tool call. The headline holds for every generator seed from 1 to 50 (100% caught, 0% false stops, median 2 wasted calls). Per-category results: `python benchmarks/loop_eval.py`.
 
 
 ## MCP server (Claude Code / Cursor)
