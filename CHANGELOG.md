@@ -2,6 +2,17 @@
 
 All notable changes to baar-core are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **`baar_guard` negative `cost_per_call` bug** — `_deduct` used a Python truthiness
+  check (`if cost_per_call:`) that evaluates to `True` for negative values. A negative
+  `cost_per_call` called `add_spent` with a negative amount, driving the store's `spent`
+  counter down and letting `remaining` exceed `total_budget`, silently breaking budget
+  integrity. Fixed by requiring `cost_per_call is not None and cost_per_call > 0`.
+  First released as 0.7.2 but never merged to `main`; this brings it to the 0.8.x line.
+  Two regression tests added.
+
 ## [0.8.0] — 2026-10-30
 
 ### Added
