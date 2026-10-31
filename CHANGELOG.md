@@ -2,7 +2,7 @@
 
 All notable changes to baar-core are documented here.
 
-## [Unreleased]
+## [0.10.0] — 2026-10-31
 
 ### Added
 - **Loop-detection parity check** — `tests/fixtures/loop_parity.json` holds shared scenarios
