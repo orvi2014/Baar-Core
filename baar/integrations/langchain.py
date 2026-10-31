@@ -310,6 +310,11 @@ class BaarChatModel(BaseChatModel):
         self._router = router
 
     @property
+    def budget_status(self):
+        """The router's BudgetStatus (spent, remaining, calls left)."""
+        return self._router.budget_status()
+
+    @property
     def _llm_type(self) -> str:
         return "baar"
 

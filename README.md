@@ -584,6 +584,32 @@ Streaming calls record the provider's reported usage, including hidden reasoning
 Over seeds 1–30: post-hoc alerts overshoot in 30/30 runs and the default `estimate` in 27/30 (up to $0.66). `preflight`, `preflight` + thinking and `truncate` never overshoot, and `preflight` never cuts an answer off. `overrun_risk=0.05` overshoots in 2/30 runs (up to $0.16) — the risk it accepts in exchange for using more of the budget. Capping thinking finishes every task because poisoned tasks stop being expensive; the simulation assumes the answer is unaffected by the cap, which real models don't guarantee. If you expect adversarial content, use `preflight` (or `truncate`) and set a `thinking_budget` on reasoning models.
 
 
+## Budget awareness and wind-down
+
+A kill-switch alone stops an agent mid-task with nothing to show for the money spent. Baar can also let the agent *see* its budget, and end with an answer instead of an exception. (BATS, arXiv 2511.17006: a short budget status block each step makes agents spend better, with no training.)
+
+```python
+from baar import BAARRouter, WindDown, BudgetExhausted
+
+router = BAARRouter(
+    budget=1.00,
+    budget_awareness=True,                        # or a formatter: lambda status: "..."
+    wind_down=WindDown(at=0.9, reserve=0.05),     # final call past 90% used / 5% left
+)
+
+try:
+    while True:
+        reply = router.chat(next_step())
+except BudgetExhausted as e:
+    answer = e.partial_result                     # the final, wrapped-up answer
+```
+
+- `router.budget_status()` → `BudgetStatus(total, spent, remaining, utilization, calls, avg_call_cost, calls_left, winding_down)`. LangChain's `BaarChatModel`, CrewAI's `BaarCrewLLM` and LangGraph's `BaarMiddleware` expose it as `.budget_status`.
+- `budget_awareness=True` adds `[budget] $0.3200 of $1.00 used (32%) · ~17 calls left at the current rate` to the end of each call's **last user message** — not the system prompt, so a cached prompt prefix stays intact.
+- `WindDown`: once utilization reaches `at`, or only `reserve` of the budget is left, the next call is the **final** one — it carries a wrap-up instruction (`instruction=` to change it). Every later call raises `BudgetExhausted` locally with that answer in `.partial_result`, until the budget is reset or a new window starts. `reserve` decides *when* to wind down; it doesn't fence money off from earlier calls, so pair it with `on_output_overrun="preflight"` if the final call must not overshoot.
+- Policy: `Rule(when={"utilization": ">= 0.8", "plan": "free"}, then="wrap_up")` makes a call the final one.
+
+
 ## Security
 
 Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.

@@ -5,6 +5,17 @@ All notable changes to baar-core are documented here.
 ## [Unreleased]
 
 ### Added
+- **Budget awareness** — `router.budget_status()` returns a `BudgetStatus` (spent,
+  remaining, utilization, calls made, average call cost, calls left at the current rate,
+  winding down). `budget_awareness=True` (or a formatter) adds a status line to the end of
+  each call's last user message, leaving a cached prompt prefix intact. `BaarChatModel`,
+  `BaarCrewLLM` and `BaarMiddleware` expose `.budget_status`.
+- **`WindDown(at=0.9, reserve=0.05)`** — once the budget is nearly used, the next call is the
+  final one and carries a wrap-up instruction; later calls raise `BudgetExhausted` locally
+  with its answer in the new `BudgetExhausted.partial_result`, until the budget is reset or
+  a new window starts.
+- **Policy action `then="wrap_up"`** — make a call the final one from a rule.
+- `RoutingLog.call_count` — model calls made, including steps evicted by `max_steps`.
 - **`on_output_overrun="continue"`** — the answer is generated in segments of
   `segment_tokens` (default 2000). Each segment reserves only its own cost (unlike
   `"truncate"`, which can reserve the whole remaining budget), and a segment that stops at

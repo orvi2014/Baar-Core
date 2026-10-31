@@ -9,9 +9,11 @@ class BudgetExhausted(RuntimeError):
     string-matching RuntimeError.
     """
 
-    def __init__(self, message: str, remaining: float = 0.0):
+    def __init__(self, message: str, remaining: float = 0.0, partial_result: "str | None" = None):
         super().__init__(message)
         self.remaining = remaining
+        # With WindDown: the final call's answer, so the run ends with a result.
+        self.partial_result = partial_result
 
 
 class TaskRejected(Exception):

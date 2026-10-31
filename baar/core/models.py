@@ -107,15 +107,23 @@ class RoutingLog:
         # Accumulate total cost independently of the deque so that evicted steps
         # are not lost from the running total when max_steps is set.
         self._total_cost_all: float = sum(s.cost for s in self.steps)
+        self._calls_all: int = sum(1 for s in self.steps if s.decision.tier != ModelTier.REJECT)
 
     def add(self, step: StepResult) -> None:
         self._total_cost_all += step.cost
+        if step.decision.tier != ModelTier.REJECT:
+            self._calls_all += 1
         self.steps.append(step)
         # deque with maxlen auto-evicts oldest; list is unbounded
 
     @property
     def total_cost(self) -> float:
         return self._total_cost_all
+
+    @property
+    def call_count(self) -> int:
+        """Model calls made, including steps evicted by max_steps (value-gate rejects excluded)."""
+        return self._calls_all
 
     @property
     def total_steps(self) -> int:

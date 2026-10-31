@@ -15,6 +15,7 @@ class PolicyAction(str, Enum):
     BLOCK = "block"
     FORCE_SMALL = "force_small"
     FORCE_BIG = "force_big"
+    WRAP_UP = "wrap_up"  # make this call the final one (see WindDown)
     ALLOW = "allow"
 
 
