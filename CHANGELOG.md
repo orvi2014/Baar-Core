@@ -2,6 +2,17 @@
 
 All notable changes to baar-core are documented here.
 
+## [Unreleased]
+
+### Added
+- **`thinking_budget`** (router and per call, default off, minimum 1024) — caps a reasoning
+  model's hidden thinking without cutting the visible answer. On token-budget providers
+  (Claude, Gemini, DeepSeek) Baar sends `thinking={"type": "enabled", "budget_tokens": N}`
+  and `max_tokens` = answer limit + N, so `max_output_tokens` is the answer's own limit and
+  `preflight` reserves answer + thinking instead of the model's full max output. On
+  effort-level providers (OpenAI o-series, GPT-5) it maps to `reasoning_effort`
+  (advisory; the reservation is unchanged). Other models ignore it.
+
 ## [0.9.0] — 2026-10-31
 
 ### Added

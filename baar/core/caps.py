@@ -16,7 +16,7 @@ Modes (``on_output_overrun``):
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 import litellm
@@ -24,6 +24,9 @@ import litellm
 from baar.core.budget import BudgetExceeded, BudgetTracker
 
 OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate")
+
+# Anthropic's minimum thinking budget; also used as the floor for every provider.
+MIN_THINKING_BUDGET = 1024
 
 
 class OutputLimitUnavailable(ValueError):
@@ -45,11 +48,14 @@ class OutputPlan:
                        Baar cut the response off.
     prompt_tokens:     prompt tokens the input is priced at: the estimate plus
                        the safety margin in "preflight" / "truncate".
+    params:            extra provider parameters for the call, e.g. a thinking
+                       budget or a reasoning effort.
     """
     completion_tokens: int
     max_tokens: Optional[int]
     budget_limited: bool = False
     prompt_tokens: int = 0
+    params: dict = field(default_factory=dict)
 
 
 def validate_mode(mode: str) -> None:
@@ -86,6 +92,35 @@ def supports_stream_usage(model: str) -> bool:
     except Exception:
         return False
     return "stream_options" in params
+
+
+def thinking_style(model: str) -> Optional[str]:
+    """
+    How ``model`` takes a reasoning limit through LiteLLM: "budget" (a token
+    budget — Anthropic, Gemini, DeepSeek), "effort" (a low/medium/high level —
+    OpenAI o-series, GPT-5), or None (not a reasoning model, or unknown).
+    """
+    try:
+        params = litellm.get_supported_openai_params(model=model) or []
+        reasoning = bool(litellm.supports_reasoning(model=model))
+    except Exception:
+        return None
+    if not reasoning:
+        return None
+    if "thinking" in params:
+        return "budget"
+    if "reasoning_effort" in params:
+        return "effort"
+    return None
+
+
+def reasoning_effort_for(thinking_budget: int) -> str:
+    """The effort level closest to a token budget, for providers without token budgets."""
+    if thinking_budget < 4096:
+        return "low"
+    if thinking_budget < 16384:
+        return "medium"
+    return "high"
 
 
 def priced_prompt_tokens(mode: str, prompt_tokens: int, prompt_margin: float) -> int:
@@ -129,10 +164,38 @@ def output_limit(model: str, prompt_tokens: int, max_output_tokens: Optional[int
     return limit
 
 
+def _answer_limit_with_thinking(
+    model: str, prompt_tokens: int, max_output_tokens: Optional[int], thinking_budget: int
+) -> int:
+    """
+    The visible answer's limit when ``thinking_budget`` tokens of thinking share
+    the output: the user's limit (capped by the model), but never more than what
+    the model's max output leaves after the thinking.
+    """
+    total = output_limit(model, prompt_tokens, None)
+    if total is None:
+        raise OutputLimitUnavailable(
+            f"thinking_budget needs the model's max output tokens, but LiteLLM has none for '{model}'."
+        )
+    if thinking_budget >= total:
+        raise OutputLimitUnavailable(
+            f"thinking_budget={thinking_budget} leaves no room for an answer within the "
+            f"{total} output tokens available on '{model}'."
+        )
+    answer = output_limit(model, prompt_tokens, max_output_tokens)
+    return min(answer if answer is not None else total, total - thinking_budget)
+
+
 def uncut_output_tokens(
-    model: str, prompt_tokens: int, expected_output_tokens: int, max_output_tokens: Optional[int]
+    model: str,
+    prompt_tokens: int,
+    expected_output_tokens: int,
+    max_output_tokens: Optional[int],
+    thinking_budget: Optional[int] = None,
 ) -> int:
     """Completion tokens for a response the budget does not cut off: the output limit, else the expected output."""
+    if thinking_budget and thinking_style(model) == "budget":
+        return _answer_limit_with_thinking(model, prompt_tokens, max_output_tokens, thinking_budget) + thinking_budget
     limit = output_limit(model, prompt_tokens, max_output_tokens)
     return limit if limit is not None else expected_output_tokens
 
@@ -149,6 +212,7 @@ def plan_output(
     min_useful_tokens: int = 64,
     max_call_share: float = 1.0,
     prompt_margin: float = 0.0,
+    thinking_budget: Optional[int] = None,
 ) -> OutputPlan:
     """
     Plan the output side of one call to ``model``.
@@ -158,6 +222,11 @@ def plan_output(
     is added to the prompt estimate when pricing input in "preflight" / "truncate";
     the context-window room is computed from the raw estimate.
 
+    ``thinking_budget`` caps hidden reasoning. On token-budget providers the
+    visible answer keeps its own limit (``max_output_tokens``) and the thinking
+    is added on top; on effort-level providers it becomes a reasoning effort and
+    the plan is otherwise unchanged; other models ignore it.
+
     Raises:
         ValueError:             unknown mode.
         OutputLimitUnavailable: "preflight" with no known output limit, or the
@@ -165,6 +234,81 @@ def plan_output(
         BudgetExceeded:         "truncate" and fewer than ``min_useful_tokens`` are affordable.
     """
     validate_mode(mode)
+    style = thinking_style(model) if thinking_budget else None
+    if style == "budget":
+        return _plan_with_thinking(
+            mode, model=model, prompt_tokens=prompt_tokens, expected_output_tokens=expected_output_tokens,
+            remaining=remaining, tracker=tracker, max_output_tokens=max_output_tokens,
+            min_useful_tokens=min_useful_tokens, max_call_share=max_call_share,
+            prompt_margin=prompt_margin, thinking_budget=thinking_budget,
+        )
+    plan = _plan_answer_only(
+        mode, model=model, prompt_tokens=prompt_tokens, expected_output_tokens=expected_output_tokens,
+        remaining=remaining, tracker=tracker, max_output_tokens=max_output_tokens,
+        min_useful_tokens=min_useful_tokens, max_call_share=max_call_share, prompt_margin=prompt_margin,
+    )
+    if style == "effort":
+        return replace(plan, params={"reasoning_effort": reasoning_effort_for(thinking_budget)})
+    return plan
+
+
+def _plan_with_thinking(
+    mode: str,
+    *,
+    model: str,
+    prompt_tokens: int,
+    expected_output_tokens: int,
+    remaining: float,
+    tracker: BudgetTracker,
+    max_output_tokens: Optional[int],
+    min_useful_tokens: int,
+    max_call_share: float,
+    prompt_margin: float,
+    thinking_budget: int,
+) -> OutputPlan:
+    """plan_output for token-budget providers: max_tokens covers thinking + answer."""
+    priced = priced_prompt_tokens(mode, prompt_tokens, prompt_margin)
+    params = {"thinking": {"type": "enabled", "budget_tokens": thinking_budget}}
+    answer = _answer_limit_with_thinking(model, prompt_tokens, max_output_tokens, thinking_budget)
+    full = answer + thinking_budget
+
+    if mode == "estimate":
+        return OutputPlan(min(expected_output_tokens, answer) + thinking_budget, full,
+                          prompt_tokens=priced, params=params)
+    if mode == "preflight":
+        return OutputPlan(full, full, prompt_tokens=priced, params=params)
+
+    # mode == "truncate": the thinking budget is kept; only the answer is shortened.
+    price = tracker.output_price_per_token(model, priced)
+    if not price:
+        return OutputPlan(full, full, prompt_tokens=priced, params=params)
+    allowance = remaining * max_call_share
+    input_cost = tracker.estimate_cost(model, priced, 0)
+    affordable = math.floor((allowance - input_cost) / price) if allowance > input_cost else 0
+    if affordable - thinking_budget < min_useful_tokens:
+        raise BudgetExceeded(
+            requested=input_cost + (thinking_budget + min_useful_tokens) * price,
+            remaining=allowance,
+            model=model,
+        )
+    if full <= affordable:
+        return OutputPlan(full, full, prompt_tokens=priced, params=params)
+    return OutputPlan(affordable, affordable, budget_limited=True, prompt_tokens=priced, params=params)
+
+
+def _plan_answer_only(
+    mode: str,
+    *,
+    model: str,
+    prompt_tokens: int,
+    expected_output_tokens: int,
+    remaining: float,
+    tracker: BudgetTracker,
+    max_output_tokens: Optional[int],
+    min_useful_tokens: int,
+    max_call_share: float,
+    prompt_margin: float,
+) -> OutputPlan:
     priced = priced_prompt_tokens(mode, prompt_tokens, prompt_margin)
 
     if mode == "estimate":
