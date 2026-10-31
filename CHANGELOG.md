@@ -2,6 +2,50 @@
 
 All notable changes to baar-core are documented here.
 
+## [Unreleased]
+
+### Added
+- **Output-overrun modes** (`on_output_overrun`) — control how the *output* side of a
+  call is bounded. Settable on the router and per call (`chat`, `achat`, `stream_chat`,
+  `astream_chat`):
+  - `"estimate"` (default) — previous behaviour. Reserves the expected output; never
+    cuts responses off.
+  - `"preflight"` — reserves the worst-case output (`max_output_tokens`, else the model's
+    real max output, capped by the room left in the context window). Responses are
+    never cut off and the budget is never overshot; calls that can't cover the worst
+    case downgrade to the small model or are blocked locally.
+  - `"truncate"` — opt-in. Derives `max_tokens` from the remaining budget. The big model
+    is used only if its full response fits; otherwise Baar downgrades first and only the
+    small model's response can be cut off.
+- `max_output_tokens` (router and per call) — your own output limit, forwarded to the
+  provider as `max_tokens`. `min_useful_tokens` (default 64) — `"truncate"` blocks
+  locally when fewer tokens are affordable.
+- `OutputLimitUnavailable` (subclass of `ValueError`) — raised before any network call
+  when `"preflight"` has no known output limit for the small model, or the prompt fills
+  the context window. The big model downgrades instead of raising.
+- `StepResult.truncated_by_budget` — `True` only when Baar's budget-derived limit cut a
+  response off (never for your own `max_output_tokens`). Counted in
+  `RoutingLog.summary()["truncated_by_budget_steps"]`.
+- Vercel proxy and LangChain `BaarChatModel` forward a request's own `max_tokens` as
+  `max_output_tokens`.
+
+### Fixed
+- **Streaming under-recorded spend.** `stream_chat` / `astream_chat` counted only the
+  visible text, so hidden reasoning tokens (o-series, GPT-5, Claude and Gemini thinking)
+  were never recorded. Streams now request provider usage via
+  `stream_options={"include_usage": True}` where LiteLLM supports it, and also read the
+  totals LiteLLM attaches to the final chunk (Anthropic). If a stream reports no usage,
+  Baar falls back to counting visible text and warns once per model.
+- **Failover could overshoot the budget.** The reservation covered only the primary
+  model; a pricier fallback ran unreserved. Each fallback is now covered at its own
+  price — the reservation is topped up, or the fallback is skipped if that can't be
+  afforded.
+
+### Changed
+- A pricier fallback that the budget can't cover is now skipped instead of called.
+- Fallback models without LiteLLM pricing now emit the same "no pricing data" warning as
+  primary models, since their cost is now estimated.
+
 ## [0.7.2] — 2026-05-20
 
 ### Fixed
