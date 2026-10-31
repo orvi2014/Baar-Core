@@ -44,6 +44,8 @@ class StepResult:
     attempted_models: List[str] = field(default_factory=list)
     failover_count: int = 0
     failover_errors: List[str] = field(default_factory=list)
+    truncated_by_budget: bool = False  # True only when Baar's budget-derived max_tokens cut the response off
+    finish_reason: Optional[str] = None  # the provider's: "stop", "length", "tool_calls", …
 
     @property
     def model_used(self) -> str:
@@ -79,6 +81,10 @@ class StepResult:
             d["estimated_cost_usd"] = self.decision.estimated_cost_usd
         if self.decision.routing_cache_hit:
             d["routing_cache_hit"] = True
+        if self.truncated_by_budget:
+            d["truncated_by_budget"] = True
+        if self.finish_reason is not None:
+            d["finish_reason"] = self.finish_reason
         return d
 
 
@@ -136,6 +142,10 @@ class RoutingLog:
         return sum(1 for s in self.steps if s.decision.routing_cache_hit)
 
     @property
+    def truncated_by_budget_steps(self) -> int:
+        return sum(1 for s in self.steps if s.truncated_by_budget)
+
+    @property
     def always_big_cost(self) -> float:
         """What this session would have cost using big model for every step."""
         total = 0.0
@@ -179,6 +189,7 @@ class RoutingLog:
             "reject_steps": self.reject_steps,
             "budget_forced_downgrades": self.budget_forced_downgrades,
             "routing_cache_hits": self.routing_cache_hits,
+            "truncated_by_budget_steps": self.truncated_by_budget_steps,
             "pct_routed_to_small": round(
                 self.small_calls / max(1, completion_steps) * 100, 1
             ),
