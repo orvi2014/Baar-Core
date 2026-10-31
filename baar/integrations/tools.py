@@ -172,5 +172,5 @@ def _preflight(
 
 def _deduct(router: BAARRouter, cost_per_call: Optional[float]) -> None:
     """Deduct fixed cost from budget after a successful call."""
-    if cost_per_call:
+    if cost_per_call is not None and cost_per_call > 0:
         router._tracker._store.add_spent(float(cost_per_call))
