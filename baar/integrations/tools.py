@@ -4,7 +4,8 @@ baar/integrations/tools.py — Tool execution guards.
 baar_guard wraps any callable (sync or async) with:
   - Call limit   : raises ToolCallLimitExceeded after max_calls invocations
   - Budget gate  : raises BudgetExhausted if router.remaining < min_budget
-  - Loop check   : raises LoopDetected before a call that would repeat a loop
+  - Loop check   : raises LoopDetected before a call that would repeat a loop,
+                   and tells the model one step earlier (loop_nudge)
   - Cost tracking: deducts cost_per_call from budget after each successful call
 
 Usage::
@@ -33,6 +34,10 @@ Args:
     loop_detector: A LoopDetector shared by the run's tools. Each call's
                    arguments and result (or error) are fed to it; a call that
                    would continue a loop raises LoopDetected and is not made.
+    loop_nudge:    When the detector warns (the next identical call would be
+                   refused), append a note to a string result telling the model
+                   to change course. Non-string results are returned unchanged;
+                   the warning still reaches the detector's on_loop.
 """
 
 from __future__ import annotations
@@ -43,7 +48,7 @@ from typing import Any, Callable, Optional
 
 from baar.router import BAARRouter
 from baar.core.exceptions import BudgetExhausted
-from baar.core.loop import LoopDetector
+from baar.core.loop import LoopDetector, loop_nudge as _loop_note
 
 
 class ToolCallLimitExceeded(RuntimeError):
@@ -65,6 +70,7 @@ def baar_guard(
     min_budget: Optional[float] = None,
     cost_per_call: Optional[float] = None,
     loop_detector: Optional[LoopDetector] = None,
+    loop_nudge: bool = True,
 ) -> Callable:
     """
     Decorator factory that wraps a tool function with call and budget limits.
@@ -77,7 +83,8 @@ def baar_guard(
       1. Call limit  — ToolCallLimitExceeded
       2. Budget gate — BudgetExhausted
       3. Loop check  — LoopDetected
-      4. Execute function (its result or error is reported to the detector)
+      4. Execute function (its result or error is reported to the detector;
+         on a warning, a string result gets the loop note)
       5. Cost deduction (only on success)
     """
 
@@ -110,7 +117,8 @@ def baar_guard(
                     raise
                 else:
                     if loop_detector:
-                        loop_detector.after(fn.__name__, call_args, result=result)
+                        warning = loop_detector.after(fn.__name__, call_args, result=result)
+                        result = _with_loop_note(result, warning, loop_nudge)
                     async_wrapper._call_count += 1
                     _deduct(router, cost_per_call)
                     return result
@@ -133,7 +141,8 @@ def baar_guard(
                     raise
                 else:
                     if loop_detector:
-                        loop_detector.after(fn.__name__, call_args, result=result)
+                        warning = loop_detector.after(fn.__name__, call_args, result=result)
+                        result = _with_loop_note(result, warning, loop_nudge)
                     sync_wrapper._call_count += 1
                     _deduct(router, cost_per_call)
                     return result
@@ -145,6 +154,13 @@ def baar_guard(
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _with_loop_note(result: Any, warning: Any, enabled: bool) -> Any:
+    """The tool result, with the loop note appended when the detector warned and it's a string."""
+    if warning is None or not enabled or not isinstance(result, str):
+        return result
+    return f"{result}\n\n{_loop_note(warning)}"
+
 
 def _preflight(
     wrapper: Callable,

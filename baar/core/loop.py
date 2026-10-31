@@ -6,8 +6,9 @@ A loop is an agent repeating a call that already returned the same thing
 
     (tool name, normalized arguments) → hash of the result, or of the error
 
-and three patterns are watched across the run (default thresholds follow
-OpenHands' StuckDetector: 4 repeats, 3 errors, 6 alternating steps):
+and three patterns are watched across the run (default thresholds: 2 repeats,
+3 errors, 3 alternating cycles — the repeat limit is lower than OpenHands'
+StuckDetector because the agent is warned first):
 
   repeat     the same call returned the same result `max_repeats` times
   error      the same call failed the same way `max_error_repeats` times in a
@@ -16,12 +17,18 @@ OpenHands' StuckDetector: 4 repeats, 3 errors, 6 alternating steps):
 
 Detection is pre-call: once a pattern is complete, the next identical call is
 refused with LoopDetected *before it runs*, so the call that would have been
-wasted is never paid for. One step earlier, `on_loop` gets a warning.
+wasted is never paid for. On the step after which the next identical one would
+be refused (the first repeat, by default), `on_loop` gets a warning, and
+baar_guard adds a note to a string tool result so the model can change course.
+In a live benchmark, telling the model mattered most: it changed course in 19 of
+20 runs, and stopping without telling it did worse than no detection at all.
 
 Including the result is what keeps healthy repetition apart from a loop: the
 same status check returning "running" then "done", or the same search with a
-new cursor, never builds up a count. A tool that legitimately returns the same
-thing many times (polling an unchanged status) belongs in `exempt_tools`.
+new cursor, never builds up a count. Short results saying the work isn't done
+yet ("running", "pending", "queued", …) never count, so waiting on a job is not
+a loop (`in_progress`). Other tools that legitimately return the same thing many
+times belong in `exempt_tools`.
 
 Usage::
 
@@ -44,10 +51,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional, Pattern, Union
 
 
 class LoopDetected(RuntimeError):
@@ -109,9 +117,26 @@ def _normalize(value: Any, ignore: frozenset[str]) -> Any:
     return value
 
 
+def _parse_args(arguments: Any) -> Any:
+    """Tool-call arguments often arrive as a JSON string; compare them as values."""
+    if isinstance(arguments, str):
+        try:
+            return json.loads(arguments)
+        except ValueError:
+            return arguments
+    return arguments
+
+
 def _digest(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, default=repr, separators=(",", ":"))
     return hashlib.blake2b(raw.encode(), digest_size=12).hexdigest()
+
+
+# Default for `in_progress`: a status that says the work isn't finished yet.
+IN_PROGRESS = re.compile(
+    r"\b(running|pending|queued|in[ _-]?progress|processing|booting|starting|initializing|waiting|not[ _-]ready)\b",
+    re.IGNORECASE,
+)
 
 
 class LoopDetector:
@@ -121,10 +146,18 @@ class LoopDetector:
 
     Args:
         max_repeats:       identical (call, result) pairs allowed; the next is refused.
+                           Default 2: the 3rd identical call is refused.
         max_error_repeats: identical (call, error) pairs allowed; the next is refused.
         max_ping_pong:     full A→B cycles allowed before the next step is refused.
-        warn:              fire an on_loop 'warn' event one occurrence before a stop.
+        warn:              fire an on_loop 'warn' event on the step after which
+                           the next identical one is refused.
         exempt_tools:      tool names never counted (e.g. status polls).
+        in_progress:       results that mean "not done yet" never count, so
+                           waiting on a job is not a loop. Default: a short
+                           result (<= 200 characters as JSON) saying running,
+                           pending, queued, in progress, processing, booting,
+                           starting, initializing, waiting or not ready. A
+                           compiled pattern changes it; False counts them.
         ignore_args:       argument names dropped before comparing (timestamps,
                            request ids), at any depth.
         normalize_result:  map a result before it is hashed, e.g. to drop a
@@ -136,11 +169,12 @@ class LoopDetector:
     def __init__(
         self,
         *,
-        max_repeats: int = 4,
+        max_repeats: int = 2,
         max_error_repeats: int = 3,
         max_ping_pong: int = 3,
         warn: bool = True,
         exempt_tools: Iterable[str] = (),
+        in_progress: Union[Pattern[str], bool, None] = None,
         ignore_args: Iterable[str] = (),
         normalize_result: Optional[Callable[[Any], Any]] = None,
         on_loop: Optional[Callable[[LoopEvent], None]] = None,
@@ -157,6 +191,7 @@ class LoopDetector:
         self.max_ping_pong = max_ping_pong
         self.warn = warn
         self.exempt_tools = frozenset(exempt_tools)
+        self._in_progress = IN_PROGRESS if in_progress is None or in_progress is True else in_progress
         self._ignore = frozenset(ignore_args)
         self._normalize_result = normalize_result
         self._on_loop = on_loop
@@ -169,6 +204,14 @@ class LoopDetector:
         self.events: list[LoopEvent] = []
 
     # ── public API ────────────────────────────────────────────────────────────
+
+    def peek(self, tool_name: str, arguments: Any = None) -> Optional[LoopEvent]:
+        """The stop before() would raise for this call, without raising or reporting it."""
+        if tool_name in self.exempt_tools:
+            return None
+        call = self._call_key(tool_name, arguments)
+        with self._lock:
+            return self._stop_for(call, tool_name)
 
     def before(self, tool_name: str, arguments: Any = None) -> None:
         """
@@ -198,7 +241,7 @@ class LoopDetector:
         Call after a tool returned (`result`) or raised (`error`). Returns the
         warning it emitted, if any.
         """
-        if tool_name in self.exempt_tools:
+        if tool_name in self.exempt_tools or (error is None and self._is_in_progress(result)):
             return None
         call = self._call_key(tool_name, arguments)
         if error is not None:
@@ -247,8 +290,20 @@ class LoopDetector:
 
     # ── internals ─────────────────────────────────────────────────────────────
 
+    def _is_in_progress(self, result: Any) -> bool:
+        if not self._in_progress:
+            return False
+        if isinstance(result, str):
+            text = result
+        else:
+            try:
+                text = json.dumps(result, default=str)
+            except Exception:
+                return False
+        return len(text) <= 200 and bool(self._in_progress.search(text))
+
     def _call_key(self, tool_name: str, arguments: Any) -> str:
-        return _digest([tool_name, _normalize(arguments, self._ignore)])
+        return _digest([tool_name, _normalize(_parse_args(arguments), self._ignore)])
 
     def _limit(self, outcome: str) -> tuple[str, int]:
         if outcome.startswith("error:"):
@@ -278,9 +333,9 @@ class LoopDetector:
         step = len(self._steps) - 1
         pattern, limit = self._limit(outcome)
         count = self._count(call, outcome)
-        # One occurrence before the stop, and only once something actually
-        # repeated (a first error is not a warning sign).
-        if count >= 2 and count == limit - 1 and (pattern, call, outcome) not in self._warned:
+        # When the next identical step is refused, and only once something
+        # actually repeated (a first error is not a warning sign).
+        if count >= 2 and count == limit and (pattern, call, outcome) not in self._warned:
             self._warned.add((pattern, call, outcome))
             return LoopEvent("warn", pattern, tool_name, count, step)
         nxt = self._ping_pong_peek()
@@ -289,7 +344,7 @@ class LoopDetector:
             pair = ("ping_pong", frozenset(
                 ((self._steps[-1].call, self._steps[-1].outcome), (self._steps[-2].call, self._steps[-2].outcome))
             ))
-            if self.max_ping_pong > 1 and cycles == self.max_ping_pong - 1 and pair not in self._warned:
+            if cycles >= 1 and cycles == self.max_ping_pong and pair not in self._warned:
                 self._warned.add(pair)
                 return LoopEvent("warn", "ping_pong", tool_name, cycles, step)
         return None
@@ -331,3 +386,17 @@ class LoopDetector:
             self._on_loop(event)
         except Exception:
             pass
+
+
+def loop_nudge(event: LoopEvent) -> str:
+    """The note for the model when its next step would be refused."""
+    if event.pattern == "error":
+        did = f"has failed the same way {event.count} times in a row"
+    elif event.pattern == "ping_pong":
+        did = f"and another step have alternated with the same results for {event.count} cycles"
+    else:
+        did = f"has returned the same result {event.count} times for the same arguments"
+    return (
+        f"[baar] The tool '{event.tool_name}' {did}. Calling it again the same way will be refused "
+        "and this run stopped. Change the arguments, use a different tool, or answer with what you already have."
+    )

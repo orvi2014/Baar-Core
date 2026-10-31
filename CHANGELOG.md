@@ -42,6 +42,10 @@ All notable changes to baar-core are documented here.
   The Vercel proxy now returns it, so clients see `"length"` when a reply was cut off
   instead of always `"stop"`, and maps `OutputLimitUnavailable` to `400
   invalid_request_error` (an error chunk when streaming).
+- `loop_nudge(event)` — the note text, for frameworks that add it to the prompt themselves.
+- `LoopDetector.peek(tool, args)` — the stop `before()` would raise, without raising or
+  reporting it.
+- Tool-call arguments given as a JSON string compare equal to the same arguments as a dict.
 
 ### Fixed
 - **Streaming under-recorded spend.** `stream_chat` / `astream_chat` counted only the
@@ -81,6 +85,22 @@ All notable changes to baar-core are documented here.
 - A pricier fallback that the budget can't cover is now skipped instead of called.
 - Fallback models without LiteLLM pricing now emit the same "no pricing data" warning as
   primary models, since their cost is now estimated.
+- **Loop detection stops earlier and tells the model first** (ported from noburn SDK 0.6.1
+  so the two match again):
+  - `LoopDetector(max_repeats=...)` default **4 → 2**: the 3rd identical call (same
+    arguments, same result) is refused. Error and ping-pong defaults are unchanged.
+  - The `on_loop` warning now fires on the step after which the next identical one is
+    refused — the first repeat by default — instead of one occurrence before that.
+  - `baar_guard` appends a note to a **string** tool result when the detector warns, so the
+    model sees it in its next turn and can change course. `loop_nudge=False` turns this off;
+    non-string results are never changed. In noburn's live benchmark, models changed course
+    in 19 of 20 warned runs; stopping without the note did worse than no detection.
+- **Waiting on a job is not a loop.** `LoopDetector(in_progress=...)`: short results
+  (≤ 200 characters) saying running, pending, queued, in progress, processing, booting,
+  starting, initializing, waiting or not ready never count. Pass a compiled pattern to
+  change the words, or `False` to count them. On `benchmarks/loop_eval.py` the default
+  detector's false stops drop from 14.3% to 0% without `exempt_tools`, and the median wasted
+  calls from 3 to 2, on every seed from 1 to 50.
 
 ## [0.8.0] — 2026-10-30
 

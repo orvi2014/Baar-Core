@@ -125,12 +125,12 @@ class TestPingPong:
 # ── warnings, tighten, reset ──────────────────────────────────────────────────
 
 class TestEvents:
-    def test_warns_once_one_occurrence_before_the_stop(self):
+    def test_warns_once_on_the_step_after_which_the_next_is_refused(self):
         seen: list[LoopEvent] = []
         d = LoopDetector(max_repeats=3, on_loop=seen.append)
         run(d, "s", {}, result="r")
-        assert run(d, "s", {}, result="r").action == "warn"
         assert run(d, "s", {}, result="r") is None
+        assert run(d, "s", {}, result="r").action == "warn"
         with pytest.raises(LoopDetected):
             d.before("s", {})
         assert [e.action for e in seen] == ["warn", "stop"]

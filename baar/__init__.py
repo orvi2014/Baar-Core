@@ -17,7 +17,7 @@ from baar.core.caps import OutputLimitUnavailable
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 from baar.core.policy import Policy, PolicyAction, Rule
-from baar.core.loop import LoopDetector, LoopDetected, LoopEvent
+from baar.core.loop import LoopDetector, LoopDetected, LoopEvent, loop_nudge
 from baar.core.stores import BudgetStore, MemoryBudgetStore, FileBudgetStore, SQLiteBudgetStore
 
 __all__ = [
@@ -44,6 +44,7 @@ __all__ = [
     "LoopDetector",
     "LoopDetected",
     "LoopEvent",
+    "loop_nudge",
     "BudgetStore",
     "MemoryBudgetStore",
     "FileBudgetStore",
