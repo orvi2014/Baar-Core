@@ -549,6 +549,21 @@ router.chat("Write the full report", on_output_overrun="truncate")
 
 In `truncate` mode the big model is used only if its *full* response fits, so models with a very large max output (GPT-5, o-series) will usually downgrade unless you set `max_output_tokens`.
 
+**Capping hidden reasoning.** `thinking_budget=4000` limits a reasoning model's thinking without touching the visible answer:
+
+```python
+router = BAARRouter.anthropic(budget=0.50, on_output_overrun="preflight",
+                              thinking_budget=4000, max_output_tokens=2000)
+```
+
+| Provider (via LiteLLM) | What Baar sends | Hard limit? |
+|---|---|---|
+| Claude, Gemini, DeepSeek | `thinking={"type": "enabled", "budget_tokens": 4000}`, `max_tokens` = answer limit + 4000 | Yes — and `max_output_tokens` means the **answer**, so thinking can't eat into it |
+| OpenAI o-series, GPT-5 | `reasoning_effort` (`low` < 4096 ≤ `medium` < 16384 ≤ `high`) | No — a hint; the worst-case reservation is unchanged |
+| Other models | nothing | — |
+
+On Claude this also makes `preflight` practical: the worst case drops from the model's full 64k–128k output tokens to answer + thinking. Minimum `thinking_budget` is 1024 (Anthropic's floor); set it per call with `router.chat(..., thinking_budget=2048)`. This is the split from *Elastic Reasoning* (arXiv 2505.05315): thinking gets its own budget and the answer keeps a reserved one.
+
 Streaming calls record the provider's reported usage, including hidden reasoning tokens. If you stop reading a stream early, Baar closes it and, in `preflight` / `truncate`, records the reserved output rather than just the text you read. The value gate (`value_fn`) compares a task's value with its *expected* cost, not the worst case these modes reserve.
 
 
