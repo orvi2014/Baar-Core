@@ -140,6 +140,11 @@ class BaarCrewLLM(_CrewAILLM):
     # ── Budget properties ─────────────────────────────────────────────────────
 
     @property
+    def budget_status(self):
+        """The router's BudgetStatus (spent, remaining, calls left)."""
+        return self._baar_router.budget_status()
+
+    @property
     def spent(self) -> float:
         """Total USD spent so far through this LLM."""
         return self._baar_router.spent

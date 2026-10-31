@@ -109,6 +109,11 @@ class BaarMiddleware:
         return self._step_count
 
     @property
+    def budget_status(self):
+        """The router's BudgetStatus (spent, remaining, calls left)."""
+        return self._router.budget_status()
+
+    @property
     def remaining(self) -> float:
         """Remaining budget from the underlying router."""
         return self._router.remaining

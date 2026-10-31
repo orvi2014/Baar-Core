@@ -20,6 +20,7 @@ from typing import AsyncGenerator, AsyncIterator, Callable, Iterator, List, Opti
 from baar.core.router import Router, ModelTier
 from baar.core import caps
 from baar.core.lengths import OutputLengths
+from baar.core.awareness import BudgetStatus, WindDown, add_note, DEFAULT_WRAP_UP
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
@@ -287,6 +288,8 @@ class BAARConfig:
     output_lengths: Optional[Any] = None  # Optional[OutputLengths]; share to pool learned lengths
     segment_tokens: int = 2000  # "continue": output tokens per segment
     max_segments: int = 8  # "continue": most segments for one answer
+    budget_awareness: Any = False  # True, or Callable[[BudgetStatus], str]: add a status line to each call
+    wind_down: Optional[WindDown] = None  # make one final, wrap-up call before the budget runs out
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -374,6 +377,8 @@ class BAARRouter:
         output_lengths: Optional[OutputLengths] = None,
         segment_tokens: int = 2000,
         max_segments: int = 8,
+        budget_awareness: Any = False,
+        wind_down: Optional[WindDown] = None,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -418,6 +423,8 @@ class BAARRouter:
             output_lengths=output_lengths,
             segment_tokens=segment_tokens,
             max_segments=max_segments,
+            budget_awareness=budget_awareness,
+            wind_down=wind_down,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -459,6 +466,12 @@ class BAARRouter:
         self._overrun_risk = float(config.overrun_risk)
         self._segment_tokens = int(config.segment_tokens)
         self._max_segments = int(config.max_segments)
+        self._budget_awareness = config.budget_awareness
+        self._wind_down: Optional[WindDown] = config.wind_down
+        self._final_lock = threading.Lock()
+        self._final_started = False
+        self._final_answer: Optional[str] = None
+        self._final_mark = 0.0  # spend when the final call was claimed
         self._output_lengths: OutputLengths = (
             config.output_lengths if config.output_lengths is not None else OutputLengths()
         )
@@ -662,7 +675,7 @@ class BAARRouter:
                       message as `task` for accurate routing.
         """
         # Build messages first so token counting includes full history
-        msgs = self._build_messages(task, messages)
+        msgs, final = self._prepare_messages(task, messages)
 
         # Cache token counts — tiktoken is O(n); same text must not be re-tokenized
         # once per check. Lazy dict so fallback models are only counted if used.
@@ -737,6 +750,10 @@ class BAARRouter:
         # ── 2c. Policy evaluation ─────────────────────────────────────────────
         if self._policy is not None:
             decision = self._apply_policy(decision, context)
+            if "[POLICY WRAP_UP]" in decision.reason and not final:
+                final = self._claim_final()
+                msgs = add_note(msgs, self._wrap_up_instruction())
+                _tc_cache.clear()  # the prompt changed
 
         # ── 3. BIG affordability check — downgrade if necessary ───────────────
         if decision.tier == ModelTier.BIG:
@@ -847,6 +864,8 @@ class BAARRouter:
         self._log.add(step_result)
         self._append_telemetry(step_result)
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
+        if final:
+            self._final_answer = step_result.response_text
         return step_result
 
     def stream_chat(
@@ -890,7 +909,7 @@ class BAARRouter:
         Token counts are accumulated during streaming and recorded afterward.
         """
         # Build messages first so token counting includes full history
-        msgs = self._build_messages(task, messages)
+        msgs, final = self._prepare_messages(task, messages)
 
         _tc_cache: dict[str, int] = {}
 
@@ -961,6 +980,10 @@ class BAARRouter:
         # ── 1c. Policy evaluation ──────────────────────────────────────────────
         if self._policy is not None:
             decision = self._apply_policy(decision, context)
+            if "[POLICY WRAP_UP]" in decision.reason and not final:
+                final = self._claim_final()
+                msgs = add_note(msgs, self._wrap_up_instruction())
+                _tc_cache.clear()  # the prompt changed
 
         if decision.tier == ModelTier.BIG:
             try:
@@ -1113,6 +1136,8 @@ class BAARRouter:
                     self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
                 if step_sink is not None:
                     step_sink.append(step_result)
+                if final and completed:
+                    self._final_answer = full_text
             except Exception as _e:
                 self._log.errors.append(f"post-stream recording failed: {type(_e).__name__}: {_e}")
             finally:
@@ -1181,7 +1206,7 @@ class BAARRouter:
         passing the affordability check and together overshooting the budget.
         """
         # Build messages first so token counting includes full history
-        msgs = self._build_messages(task, messages)
+        msgs, final = self._prepare_messages(task, messages)
 
         _tc_cache: dict[str, int] = {}
 
@@ -1254,6 +1279,10 @@ class BAARRouter:
         # ── 2c. Policy evaluation ─────────────────────────────────────────────
         if self._policy is not None:
             decision = self._apply_policy(decision, context)
+            if "[POLICY WRAP_UP]" in decision.reason and not final:
+                final = self._claim_final()
+                msgs = add_note(msgs, self._wrap_up_instruction())
+                _tc_cache.clear()  # the prompt changed
 
         # ── 3. BIG affordability check — downgrade if necessary ───────────────
         if decision.tier == ModelTier.BIG:
@@ -1364,6 +1393,8 @@ class BAARRouter:
         self._log.add(step_result)
         self._append_telemetry(step_result)
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
+        if final:
+            self._final_answer = step_result.response_text
         return step_result
 
     async def astream_chat(
@@ -1415,7 +1446,7 @@ class BAARRouter:
         streaming and cleaned up via try/finally.
         """
         # Build messages first so token counting includes full history
-        msgs = self._build_messages(task, messages)
+        msgs, final = self._prepare_messages(task, messages)
 
         _tc_cache: dict[str, int] = {}
 
@@ -1483,6 +1514,10 @@ class BAARRouter:
         # ── Policy evaluation ──────────────────────────────────────────────────
         if self._policy is not None:
             decision = self._apply_policy(decision, context)
+            if "[POLICY WRAP_UP]" in decision.reason and not final:
+                final = self._claim_final()
+                msgs = add_note(msgs, self._wrap_up_instruction())
+                _tc_cache.clear()  # the prompt changed
 
         if decision.tier == ModelTier.BIG:
             try:
@@ -1638,6 +1673,8 @@ class BAARRouter:
                     self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
                 if step_sink is not None:
                     step_sink.append(step_result)
+                if final and completed:
+                    self._final_answer = full_text
             except Exception as _e:
                 self._log.errors.append(f"post-stream recording failed: {type(_e).__name__}: {_e}")
             finally:
@@ -1731,6 +1768,8 @@ class BAARRouter:
                 reason=f"[POLICY FORCE_SMALL] {decision.reason}",
                 forced_by_budget=False,
             )
+        if action == PolicyAction.WRAP_UP:
+            return replace(decision, reason=f"[POLICY WRAP_UP] {decision.reason}")
         if action == PolicyAction.FORCE_BIG:
             return replace(
                 decision,
@@ -1739,6 +1778,70 @@ class BAARRouter:
                 reason=f"[POLICY FORCE_BIG] {decision.reason}",
             )
         return decision  # ALLOW or no match
+
+    # ── budget awareness and wind-down ────────────────────────────────────────
+
+    def budget_status(self) -> BudgetStatus:
+        """What's been spent, what's left, and roughly how many calls that buys."""
+        total, spent, remaining = self._tracker.total_budget, self._tracker.spent, self._tracker.remaining
+        calls = self._log.call_count
+        avg = self._log.total_cost / calls if calls and self._log.total_cost > 0 else None
+        return BudgetStatus(
+            total=total,
+            spent=spent,
+            remaining=remaining,
+            utilization=self._tracker.utilization,
+            calls=calls,
+            avg_call_cost=avg,
+            calls_left=int(remaining // avg) if avg else None,
+            winding_down=self._winding_down(),
+        )
+
+    def _winding_down(self) -> bool:
+        """The final call was claimed, and the budget hasn't been reset since."""
+        return self._final_started and self._tracker.spent >= self._final_mark
+
+    def _wrap_up_instruction(self) -> str:
+        return self._wind_down.instruction if self._wind_down is not None else DEFAULT_WRAP_UP
+
+    def _claim_final(self) -> bool:
+        """Make this call the final one, or raise if the final call was already made."""
+        with self._final_lock:
+            if self._final_started:
+                raise BudgetExhausted(
+                    "Wind-down: the final call was already made. Its answer is in .partial_result; "
+                    "no network call was made.",
+                    remaining=self.remaining,
+                    partial_result=self._final_answer,
+                )
+            self._final_started = True
+            # Above zero, so a reset is noticed even when the final call came first.
+            self._final_mark = max(self._tracker.spent, 1e-12)
+        return True
+
+    def _prepare_messages(self, task: str, messages: Optional[List[dict]]) -> tuple:
+        """
+        The call's messages, with the budget status line and/or the wrap-up
+        instruction added. Returns (messages, is_final_call).
+        """
+        final = False
+        if self._final_started and not self._winding_down():
+            with self._final_lock:  # the budget was reset (or a new window started)
+                self._final_started, self._final_answer = False, None
+        if self._final_started:
+            self._claim_final()  # raises: the final call was already made
+        if self._wind_down is not None and self._wind_down.due(self.budget_status()):
+            final = self._claim_final()
+        msgs = self._build_messages(task, messages)
+        notes = []
+        if self._budget_awareness:
+            status = self.budget_status()
+            notes.append(self._budget_awareness(status) if callable(self._budget_awareness) else status.note())
+        if final:
+            notes.append(self._wrap_up_instruction())
+        if notes:
+            msgs = add_note(msgs, "\n".join(notes))
+        return msgs, final
 
     def _build_messages(self, task: str, messages: Optional[List[dict]] = None) -> list:
         if messages is not None and not messages:
