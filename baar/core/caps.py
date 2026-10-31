@@ -213,6 +213,7 @@ def plan_output(
     max_call_share: float = 1.0,
     prompt_margin: float = 0.0,
     thinking_budget: Optional[int] = None,
+    predicted_tokens: Optional[int] = None,
 ) -> OutputPlan:
     """
     Plan the output side of one call to ``model``.
@@ -227,6 +228,10 @@ def plan_output(
     is added on top; on effort-level providers it becomes a reasoning effort and
     the plan is otherwise unchanged; other models ignore it.
 
+    ``predicted_tokens`` (a learned output length, see baar.core.lengths) lowers
+    what "preflight" reserves; ``max_tokens`` stays the full limit, so nothing
+    is cut off. Other modes ignore it.
+
     Raises:
         ValueError:             unknown mode.
         OutputLimitUnavailable: "preflight" with no known output limit, or the
@@ -234,6 +239,31 @@ def plan_output(
         BudgetExceeded:         "truncate" and fewer than ``min_useful_tokens`` are affordable.
     """
     validate_mode(mode)
+    plan = _plan(
+        mode, model=model, prompt_tokens=prompt_tokens, expected_output_tokens=expected_output_tokens,
+        remaining=remaining, tracker=tracker, max_output_tokens=max_output_tokens,
+        min_useful_tokens=min_useful_tokens, max_call_share=max_call_share,
+        prompt_margin=prompt_margin, thinking_budget=thinking_budget,
+    )
+    if mode == "preflight" and predicted_tokens is not None and predicted_tokens < plan.completion_tokens:
+        return replace(plan, completion_tokens=max(1, predicted_tokens))
+    return plan
+
+
+def _plan(
+    mode: str,
+    *,
+    model: str,
+    prompt_tokens: int,
+    expected_output_tokens: int,
+    remaining: float,
+    tracker: BudgetTracker,
+    max_output_tokens: Optional[int],
+    min_useful_tokens: int,
+    max_call_share: float,
+    prompt_margin: float,
+    thinking_budget: Optional[int],
+) -> OutputPlan:
     style = thinking_style(model) if thinking_budget else None
     if style == "budget":
         return _plan_with_thinking(

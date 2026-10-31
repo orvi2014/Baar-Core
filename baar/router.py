@@ -19,6 +19,7 @@ from typing import AsyncGenerator, AsyncIterator, Callable, Iterator, List, Opti
 
 from baar.core.router import Router, ModelTier
 from baar.core import caps
+from baar.core.lengths import OutputLengths
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
@@ -270,6 +271,8 @@ class BAARConfig:
     max_call_share: float = 1.0  # "truncate": largest share of the remaining budget one call may reserve
     prompt_margin: float = 0.2  # "preflight"/"truncate": extra share of the prompt estimate priced in
     thinking_budget: Optional[int] = None  # cap on hidden reasoning tokens (reasoning models only)
+    overrun_risk: float = 0.0  # "preflight": reserve the learned (1 - risk) output length, not the worst case
+    output_lengths: Optional[Any] = None  # Optional[OutputLengths]; share to pool learned lengths
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -353,6 +356,8 @@ class BAARRouter:
         max_call_share: float = 1.0,
         prompt_margin: float = 0.2,
         thinking_budget: Optional[int] = None,
+        overrun_risk: float = 0.0,
+        output_lengths: Optional[OutputLengths] = None,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -393,6 +398,8 @@ class BAARRouter:
             max_call_share=max_call_share,
             prompt_margin=prompt_margin,
             thinking_budget=thinking_budget,
+            overrun_risk=overrun_risk,
+            output_lengths=output_lengths,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -413,6 +420,8 @@ class BAARRouter:
         if config.prompt_margin < 0:
             raise ValueError("prompt_margin must be non-negative")
         _validate_thinking_budget(config.thinking_budget)
+        if not 0 <= config.overrun_risk < 1:
+            raise ValueError("overrun_risk must be in [0, 1)")
 
         self.small_model = config.small_model
         self.big_model = config.big_model
@@ -425,6 +434,10 @@ class BAARRouter:
         self._max_call_share = float(config.max_call_share)
         self._prompt_margin = float(config.prompt_margin)
         self._thinking_budget = config.thinking_budget
+        self._overrun_risk = float(config.overrun_risk)
+        self._output_lengths: OutputLengths = (
+            config.output_lengths if config.output_lengths is not None else OutputLengths()
+        )
         self._no_stream_usage_warned: set = set()
         self._domain_model_overrides = config.domain_model_overrides or {}
         for _domain, _override in self._domain_model_overrides.items():
@@ -568,6 +581,11 @@ class BAARRouter:
     @property
     def min_cost_threshold(self) -> float:
         return self._min_cost_threshold
+
+    @property
+    def output_lengths(self) -> OutputLengths:
+        """Output lengths learned from completed calls (used by overrun_risk)."""
+        return self._output_lengths
 
     @property
     def config(self) -> BAARConfig:
@@ -781,6 +799,7 @@ class BAARRouter:
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
+        self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
         return step_result.response_text
 
     def stream_chat(
@@ -1020,6 +1039,8 @@ class BAARRouter:
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
+                if completed:  # an early exit records the reservation, not a real length
+                    self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
             except Exception as _e:
                 self._log.errors.append(f"post-stream recording failed: {type(_e).__name__}: {_e}")
             finally:
@@ -1251,6 +1272,7 @@ class BAARRouter:
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
+        self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
         return step_result.response_text
 
     async def astream_chat(
@@ -1489,6 +1511,8 @@ class BAARRouter:
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
+                if completed:  # an early exit records the reservation, not a real length
+                    self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
             except Exception as _e:
                 self._log.errors.append(f"post-stream recording failed: {type(_e).__name__}: {_e}")
             finally:
@@ -1811,6 +1835,10 @@ class BAARRouter:
             max_call_share=self._max_call_share,
             prompt_margin=self._prompt_margin,
             thinking_budget=thinking,
+            predicted_tokens=(
+                self._output_lengths.quantile(model, self._overrun_risk)
+                if mode == "preflight" and self._overrun_risk > 0 else None
+            ),
         )
 
     def _expected_tokens(
