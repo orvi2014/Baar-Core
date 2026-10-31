@@ -382,18 +382,23 @@ class BudgetTracker:
         self._fire_alerts()
         return rec
 
-    def record_manual(self, model: str, prompt_tokens: int, completion_tokens: int) -> SpendRecord:
+    def record_manual(
+        self, model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0
+    ) -> SpendRecord:
         """
         Record spend from manually collected token counts.
         Used by stream_chat() where token counts are accumulated during streaming
-        rather than read from a response object.
+        rather than read from a response object. ``cached_tokens`` of the prompt
+        are billed at the cache-read rate.
         """
         self._step += 1
         try:
+            kwargs = {"cache_read_input_tokens": min(cached_tokens, prompt_tokens)} if cached_tokens > 0 else {}
             in_cost, out_cost = cost_per_token(
                 model=model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
+                **kwargs,
             )
             cost = float(in_cost + out_cost)
         except Exception:

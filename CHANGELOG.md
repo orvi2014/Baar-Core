@@ -5,6 +5,16 @@ All notable changes to baar-core are documented here.
 ## [Unreleased]
 
 ### Added
+- **Prompt-cache accounting** — `StepResult.cached_prompt_tokens` (read from OpenAI's
+  `prompt_tokens_details.cached_tokens` or Anthropic's `cache_read_input_tokens`);
+  `RoutingLog.summary()` adds `cached_prompt_tokens` and `cache_hit_rate_pct`, shown in
+  `print_report()`. `BudgetTracker.record_manual(..., cached_tokens=)` prices cached prompt
+  tokens at the cache-read rate. Reservations still use the uncached price.
+- **Cache benchmark** (`benchmarks/cache_eval.py`) — multi-turn, long-context conversations
+  with real gpt-5 / gpt-5-mini pricing and OpenAI-style prefix caching: routing costs 31%
+  less than always using gpt-5 even after cache losses. A "sticky" routing rule (stay on the
+  cached big model when that turn is cheaper) was evaluated and not shipped: it cost more
+  overall.
 - **Budget awareness** — `router.budget_status()` returns a `BudgetStatus` (spent,
   remaining, utilization, calls made, average call cost, calls left at the current rate,
   winding down). `budget_awareness=True` (or a formatter) adds a status line to the end of
@@ -45,6 +55,11 @@ All notable changes to baar-core are documented here.
   `preflight` reserves answer + thinking instead of the model's full max output. On
   effort-level providers (OpenAI o-series, GPT-5) it maps to `reasoning_effort`
   (advisory; the reservation is unchanged). Other models ignore it.
+
+### Fixed
+- **Streams ignored the prompt-cache discount.** `stream_chat` / `astream_chat` recorded
+  every prompt token at the full input price; cached tokens are now recorded at the
+  cache-read rate (non-streamed calls already were, via LiteLLM's `completion_cost`).
 
 ## [0.9.0] — 2026-10-31
 

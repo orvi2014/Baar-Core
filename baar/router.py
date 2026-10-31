@@ -21,6 +21,7 @@ from baar.core.router import Router, ModelTier
 from baar.core import caps
 from baar.core.lengths import OutputLengths
 from baar.core.awareness import BudgetStatus, WindDown, add_note, DEFAULT_WRAP_UP
+from baar.core.cache import cached_tokens
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
@@ -184,7 +185,7 @@ def _stream_usage_options(model: str) -> Optional[dict]:
 
 def _reported_usage(chunk) -> Optional[tuple]:
     """
-    (prompt_tokens, completion_tokens) reported in a stream chunk, or None.
+    (prompt_tokens, completion_tokens, cached_tokens) reported in a stream chunk, or None.
 
     Reads ``chunk.usage`` (sent with stream_options include_usage) and falls back
     to ``chunk._hidden_params["usage"]``, where LiteLLM puts the provider's real
@@ -201,7 +202,7 @@ def _reported_usage(chunk) -> Optional[tuple]:
             # LiteLLM attaches (0, 0) to the last chunk when the provider sent no usage.
             if prompt_tokens == 0 and completion_tokens == 0:
                 continue
-            return prompt_tokens, completion_tokens
+            return prompt_tokens, completion_tokens, cached_tokens(usage)
     return None
 
 
@@ -860,6 +861,7 @@ class BAARRouter:
             failover_errors=failover_errors,
             truncated_by_budget=plan.budget_limited and response.choices[0].finish_reason == "length",
             finish_reason=_finish_reason(response.choices[0].finish_reason),
+            cached_prompt_tokens=cached_tokens(response.usage),
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
@@ -1067,6 +1069,7 @@ class BAARRouter:
         prompt_tokens_for_record = 0  # set inside try; default protects finally if interrupted early
         finish_reason: Optional[str] = None
         usage: Optional[tuple] = None
+        cached_for_record = 0
         completed = False
 
         try:
@@ -1095,7 +1098,7 @@ class BAARRouter:
                 usage = None  # 0 completion tokens with text produced isn't real usage
             if usage is not None:
                 # Provider-reported usage includes hidden reasoning tokens.
-                reported_prompt, completion_tokens = usage
+                reported_prompt, completion_tokens, cached_for_record = usage
                 # Anthropic's final event can report 0 input tokens; keep our count then.
                 if reported_prompt > 0:
                     prompt_tokens_for_record = reported_prompt
@@ -1112,7 +1115,8 @@ class BAARRouter:
                 # concurrent threads never see a transient under-count window
                 # (spent would drop then rise, allowing over-allocation).
                 record = self._tracker.record_manual(
-                    model_to_use_final, prompt_tokens_for_record, completion_tokens
+                    model_to_use_final, prompt_tokens_for_record, completion_tokens,
+                    cached_tokens=cached_for_record,
                 )
                 step_result = StepResult(
                     step_num=step_num,
@@ -1129,6 +1133,7 @@ class BAARRouter:
                     failover_errors=failover_errors,
                     truncated_by_budget=plan.budget_limited and finish_reason == "length",
                     finish_reason=_finish_reason(finish_reason),
+                    cached_prompt_tokens=cached_for_record,
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
@@ -1389,6 +1394,7 @@ class BAARRouter:
             failover_errors=failover_errors,
             truncated_by_budget=plan.budget_limited and response.choices[0].finish_reason == "length",
             finish_reason=_finish_reason(response.choices[0].finish_reason),
+            cached_prompt_tokens=cached_tokens(response.usage),
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
@@ -1601,6 +1607,7 @@ class BAARRouter:
         prompt_tokens_for_record = 0  # set inside try; default protects finally if interrupted early
         finish_reason: Optional[str] = None
         usage: Optional[tuple] = None
+        cached_for_record = 0
         completed = False
 
         try:
@@ -1635,7 +1642,7 @@ class BAARRouter:
                 usage = None  # 0 completion tokens with text produced isn't real usage
             if usage is not None:
                 # Provider-reported usage includes hidden reasoning tokens.
-                reported_prompt, completion_tokens = usage
+                reported_prompt, completion_tokens, cached_for_record = usage
                 # Anthropic's final event can report 0 input tokens; keep our count then.
                 if reported_prompt > 0:
                     prompt_tokens_for_record = reported_prompt
@@ -1649,7 +1656,8 @@ class BAARRouter:
                     completion_tokens = max(completion_tokens, plan.completion_tokens)
             try:
                 record = self._tracker.record_manual(
-                    model_to_use_final, prompt_tokens_for_record, completion_tokens
+                    model_to_use_final, prompt_tokens_for_record, completion_tokens,
+                    cached_tokens=cached_for_record,
                 )
                 step_result = StepResult(
                     step_num=step_num,
@@ -1666,6 +1674,7 @@ class BAARRouter:
                     failover_errors=failover_errors,
                     truncated_by_budget=plan.budget_limited and finish_reason == "length",
                     finish_reason=_finish_reason(finish_reason),
+                    cached_prompt_tokens=cached_for_record,
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)

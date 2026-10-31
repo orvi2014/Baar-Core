@@ -46,6 +46,7 @@ class StepResult:
     failover_errors: List[str] = field(default_factory=list)
     truncated_by_budget: bool = False  # True only when Baar's budget-derived max_tokens cut the response off
     finish_reason: Optional[str] = None  # the provider's: "stop", "length", "tool_calls", …
+    cached_prompt_tokens: int = 0  # prompt tokens the provider billed at its cache rate
 
     @property
     def model_used(self) -> str:
@@ -85,6 +86,8 @@ class StepResult:
             d["truncated_by_budget"] = True
         if self.finish_reason is not None:
             d["finish_reason"] = self.finish_reason
+        if self.cached_prompt_tokens:
+            d["cached_prompt_tokens"] = self.cached_prompt_tokens
         return d
 
 
@@ -150,6 +153,16 @@ class RoutingLog:
         return sum(1 for s in self.steps if s.decision.routing_cache_hit)
 
     @property
+    def cached_prompt_tokens(self) -> int:
+        return sum(s.cached_prompt_tokens for s in self.steps)
+
+    @property
+    def cache_hit_rate_pct(self) -> float:
+        """Share of prompt tokens billed at a cache rate."""
+        prompt = sum(s.prompt_tokens for s in self.steps)
+        return round(self.cached_prompt_tokens / prompt * 100, 1) if prompt else 0.0
+
+    @property
     def truncated_by_budget_steps(self) -> int:
         return sum(1 for s in self.steps if s.truncated_by_budget)
 
@@ -198,6 +211,8 @@ class RoutingLog:
             "budget_forced_downgrades": self.budget_forced_downgrades,
             "routing_cache_hits": self.routing_cache_hits,
             "truncated_by_budget_steps": self.truncated_by_budget_steps,
+            "cached_prompt_tokens": self.cached_prompt_tokens,
+            "cache_hit_rate_pct": self.cache_hit_rate_pct,
             "pct_routed_to_small": round(
                 self.small_calls / max(1, completion_steps) * 100, 1
             ),
@@ -224,6 +239,8 @@ class RoutingLog:
         print(f"  → value rejects: {s['reject_steps']}")
         print(f"  → routing cache hits: {s['routing_cache_hits']}")
         print(f"  → budget forced downgrades: {s['budget_forced_downgrades']}")
+        print(f"  → prompt cache: {s['cache_hit_rate_pct']}% of prompt tokens cached "
+              f"({s['cached_prompt_tokens']} tokens)")
         print("─" * 60)
         print(f"  BAAR cost:              ${sav['baar_cost']:.6f}")
         print(f"  Always-big estimate:    ${sav['estimated_always_big_cost']:.6f}")
