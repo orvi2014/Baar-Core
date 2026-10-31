@@ -2,7 +2,7 @@
 
 All notable changes to baar-core are documented here.
 
-## [Unreleased]
+## [0.9.0] — 2026-10-31
 
 ### Added
 - **Output-overrun modes** (`on_output_overrun`) — control how the *output* side of a
