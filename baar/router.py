@@ -18,6 +18,7 @@ from dataclasses import dataclass, replace
 from typing import AsyncGenerator, AsyncIterator, Callable, Iterator, List, Optional, Any
 
 from baar.core.router import Router, ModelTier
+from baar.core import caps
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
@@ -116,12 +117,18 @@ def _sync_completion_with_retry(
     max_retries: int = 2,
     stream: bool = False,
     timeout: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    stream_options: Optional[dict] = None,
 ) -> object:
     """Synchronous LiteLLM completion with exponential backoff on transient errors."""
     delay = 1.0
     kwargs = dict(model=model, messages=messages, stream=stream)
     if timeout is not None:
         kwargs["timeout"] = timeout
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    if stream_options is not None:
+        kwargs["stream_options"] = stream_options
     for attempt in range(max_retries + 1):
         try:
             return litellm.completion(**kwargs)
@@ -139,12 +146,18 @@ async def _async_completion_with_retry(
     max_retries: int = 2,
     stream: bool = False,
     timeout: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    stream_options: Optional[dict] = None,
 ) -> object:
     """Async LiteLLM completion with exponential backoff on transient errors."""
     delay = 1.0
     kwargs = dict(model=model, messages=messages, stream=stream)
     if timeout is not None:
         kwargs["timeout"] = timeout
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    if stream_options is not None:
+        kwargs["stream_options"] = stream_options
     for attempt in range(max_retries + 1):
         try:
             return await litellm.acompletion(**kwargs)
@@ -154,6 +167,31 @@ async def _async_completion_with_retry(
                 delay = min(delay * 2, 30.0)  # pragma: no cover
             else:
                 raise
+
+
+def _stream_usage_options(model: str) -> Optional[dict]:
+    """Ask the provider to report real usage at the end of a stream, where LiteLLM supports it."""
+    return {"include_usage": True} if caps.supports_stream_usage(model) else None
+
+
+def _reported_usage(chunk) -> Optional[tuple]:
+    """
+    (prompt_tokens, completion_tokens) reported in a stream chunk, or None.
+
+    Reads ``chunk.usage`` (sent with stream_options include_usage) and falls back
+    to ``chunk._hidden_params["usage"]``, where LiteLLM puts the provider's real
+    totals on the last chunk when stream_options isn't sent (e.g. Anthropic).
+    """
+    hidden = getattr(chunk, "_hidden_params", None)
+    candidates = [getattr(chunk, "usage", None)]
+    if isinstance(hidden, dict):
+        candidates.append(hidden.get("usage"))
+    for usage in candidates:
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+            return prompt_tokens, completion_tokens
+    return None
 
 
 # ── BAARConfig ─────────────────────────────────────────────────────────────────
@@ -195,6 +233,9 @@ class BAARConfig:
     policy: Optional[Policy] = None
     window: Optional[BudgetWindow] = None
     alerts: Optional[List[Alert]] = None
+    on_output_overrun: str = "estimate"  # "estimate" | "preflight" | "truncate" — see baar.core.caps
+    max_output_tokens: Optional[int] = None
+    min_useful_tokens: int = 64  # "truncate" blocks locally below this many affordable tokens
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -272,6 +313,9 @@ class BAARRouter:
         policy: Optional[Policy] = None,
         window: Optional[BudgetWindow] = None,
         alerts: Optional[List[Alert]] = None,
+        on_output_overrun: str = "estimate",
+        max_output_tokens: Optional[int] = None,
+        min_useful_tokens: int = 64,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -306,6 +350,9 @@ class BAARRouter:
             policy=policy,
             window=window,
             alerts=alerts,
+            on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens,
+            min_useful_tokens=min_useful_tokens,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -316,12 +363,21 @@ class BAARRouter:
             raise ValueError("Budget must be positive")
         if config.min_cost_threshold < 0:
             raise ValueError("min_cost_threshold must be non-negative")
+        caps.validate_mode(config.on_output_overrun)
+        if config.max_output_tokens is not None and config.max_output_tokens < 1:
+            raise ValueError("max_output_tokens must be a positive integer or None")
+        if config.min_useful_tokens < 1:
+            raise ValueError("min_useful_tokens must be a positive integer")
 
         self.small_model = config.small_model
         self.big_model = config.big_model
         self.system_prompt = config.system_prompt
         self._min_cost_threshold = float(config.min_cost_threshold)
         self._expected_output_tokens = max(1, int(config.expected_output_tokens))
+        self._on_output_overrun = config.on_output_overrun
+        self._max_output_tokens = config.max_output_tokens
+        self._min_useful_tokens = int(config.min_useful_tokens)
+        self._no_stream_usage_warned: set = set()
         self._domain_model_overrides = config.domain_model_overrides or {}
         for _domain, _override in self._domain_model_overrides.items():
             if isinstance(_override, tuple):
@@ -471,7 +527,15 @@ class BAARRouter:
 
     # ── Sync execution ─────────────────────────────────────────────────────────
 
-    def chat(self, task: str, *, messages: Optional[List[dict]] = None, context: Optional[dict] = None) -> str:
+    def chat(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> str:
         """
         Execute a single routed chat call with hard financial guardrails.
 
@@ -495,12 +559,22 @@ class BAARRouter:
                 _tc_cache[model] = token_counter(messages=msgs, model=model)
             return _tc_cache[model]
 
+        mode, limit = self._resolve_output_opts(on_output_overrun, max_output_tokens)
         eot = self._expected_output_tokens
 
         # ── 0. Hard Kill-Switch Pre-check ─────────────────────────────────────
         prompt_tokens_est = tc(self.small_model)
+        try:
+            small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit)
+        except BudgetExceeded as e:
+            raise BudgetExhausted(
+                "Kill-switch activated: "
+                f"budget too low (${self.remaining:.6f}) for a useful response "
+                f"on {self.small_model}. Request rejected locally with zero network calls.",
+                remaining=self.remaining,
+            ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, eot
+            self.small_model, prompt_tokens_est, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -516,7 +590,9 @@ class BAARRouter:
 
         # ── 1. Cheapest-call affordability check ──────────────────────────────
         try:
-            self._tracker.check_affordability(self.small_model, prompt_tokens_est, eot)
+            self._tracker.check_affordability(
+                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            )
         except BudgetExceeded as e:
             raise BudgetExhausted(
                 "Kill-switch activated: "
@@ -551,8 +627,12 @@ class BAARRouter:
         # ── 3. BIG affordability check — downgrade if necessary ───────────────
         if decision.tier == ModelTier.BIG:
             try:
-                self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
-            except BudgetExceeded as e:
+                # The big model must fit its full response; "truncate" only ever
+                # cuts off the small model after a downgrade.
+                self._check_output_affordable(
+                    self.big_model, tc(self.big_model), eot, mode, limit, uncut=True
+                )
+            except (BudgetExceeded, caps.OutputLimitUnavailable) as e:
                 if "[POLICY FORCE_BIG]" in decision.reason:
                     warnings.warn(
                         f"Policy requested force_big but budget is insufficient "
@@ -564,7 +644,7 @@ class BAARRouter:
 
         # Final pre-flight check for the chosen model
         model_to_use = decision.model
-        self._tracker.check_affordability(model_to_use, tc(model_to_use), eot)
+        self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
 
         # ── 3b. Value gate ────────────────────────────────────────────────────
         decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, eot)
@@ -577,7 +657,8 @@ class BAARRouter:
         response = None
         attempted_models: List[str] = []
         failover_errors: List[str] = []
-        reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), eot)
+        plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
+        reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
         with self._sync_budget_lock:
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
@@ -585,14 +666,25 @@ class BAARRouter:
             step_num = self._step_counter
 
         try:
-            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
+            for idx, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+                if idx > 0:
+                    # A fallback may cost more than the primary: top up the reservation
+                    # at the candidate's own price, or skip it if that can't be covered.
+                    try:
+                        plan, reserved = self._cover_fallback(candidate, tc, eot, mode, limit, reserved)
+                    except BudgetExceeded as e:
+                        failover_errors.append(f"{candidate}: skipped, unaffordable ({e})")
+                        continue
+                    except ValueError as e:
+                        failover_errors.append(f"{candidate}: skipped ({e})")
+                        continue
                 attempted_models.append(candidate)
                 # Do NOT re-check affordability here: we already have a reservation
                 # that covers this call. A redundant check against the already-reduced
                 # remaining would reject valid fallbacks at low budget (same fix as achat).
                 try:
                     response = _sync_completion_with_retry(
-                        candidate, msgs, timeout=self._call_timeout
+                        candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens
                     )
                     model_to_use = candidate
                     break
@@ -632,6 +724,7 @@ class BAARRouter:
             attempted_models=attempted_models,
             failover_count=max(0, len(attempted_models) - 1),
             failover_errors=failover_errors,
+            truncated_by_budget=plan.budget_limited and response.choices[0].finish_reason == "length",
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
@@ -643,6 +736,8 @@ class BAARRouter:
         *,
         messages: Optional[List[dict]] = None,
         context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> Iterator[str]:
         """
         Streaming version of chat() — yields text chunks as they arrive.
@@ -661,12 +756,22 @@ class BAARRouter:
                 _tc_cache[model] = token_counter(messages=msgs, model=model)
             return _tc_cache[model]
 
+        mode, limit = self._resolve_output_opts(on_output_overrun, max_output_tokens)
         eot = self._expected_output_tokens
 
         # ── 0. Kill-switch pre-check ───────────────────────────────────────────
         prompt_tokens_est = tc(self.small_model)
+        try:
+            small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit)
+        except BudgetExceeded as e:
+            raise BudgetExhausted(
+                "Kill-switch activated: "
+                f"budget too low (${self.remaining:.6f}) for a useful response "
+                f"on {self.small_model}. Request rejected locally with zero network calls.",
+                remaining=self.remaining,
+            ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, eot
+            self.small_model, prompt_tokens_est, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -681,7 +786,9 @@ class BAARRouter:
             )
 
         try:
-            self._tracker.check_affordability(self.small_model, prompt_tokens_est, eot)
+            self._tracker.check_affordability(
+                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            )
         except BudgetExceeded as e:
             raise BudgetExhausted(
                 "Kill-switch activated: "
@@ -714,8 +821,12 @@ class BAARRouter:
 
         if decision.tier == ModelTier.BIG:
             try:
-                self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
-            except BudgetExceeded as e:
+                # The big model must fit its full response; "truncate" only ever
+                # cuts off the small model after a downgrade.
+                self._check_output_affordable(
+                    self.big_model, tc(self.big_model), eot, mode, limit, uncut=True
+                )
+            except (BudgetExceeded, caps.OutputLimitUnavailable) as e:
                 if "[POLICY FORCE_BIG]" in decision.reason:
                     warnings.warn(
                         f"Policy requested force_big but budget is insufficient "
@@ -726,7 +837,7 @@ class BAARRouter:
                 decision = self._router.force_small(decision, str(e))
 
         model_to_use = decision.model
-        self._tracker.check_affordability(model_to_use, tc(model_to_use), eot)
+        self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
         decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, eot)
 
         # ── 2. Reserve budget atomically, then find a working stream ──────────
@@ -736,7 +847,8 @@ class BAARRouter:
         failover_errors: List[str] = []
         response_stream = None
         model_to_use_final = model_to_use
-        reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), eot)
+        plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
+        reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
         with self._sync_budget_lock:
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
@@ -744,12 +856,25 @@ class BAARRouter:
             step_num = self._step_counter
 
         try:
-            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
+            for idx, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+                if idx > 0:
+                    # A fallback may cost more than the primary: top up the reservation
+                    # at the candidate's own price, or skip it if that can't be covered.
+                    try:
+                        plan, reserved = self._cover_fallback(candidate, tc, eot, mode, limit, reserved)
+                    except BudgetExceeded as e:
+                        failover_errors.append(f"{candidate}: skipped, unaffordable ({e})")
+                        continue
+                    except ValueError as e:
+                        failover_errors.append(f"{candidate}: skipped ({e})")
+                        continue
                 attempted_models.append(candidate)
                 # Do NOT re-check affordability here: reservation already covers this call.
                 try:
                     response_stream = _sync_completion_with_retry(
-                        candidate, msgs, stream=True, timeout=self._call_timeout
+                        candidate, msgs, stream=True, timeout=self._call_timeout,
+                        max_tokens=plan.max_tokens,
+                        stream_options=_stream_usage_options(candidate),
                     )
                     model_to_use_final = candidate
                     break
@@ -771,6 +896,8 @@ class BAARRouter:
         parts: list[str] = []
         start_time = time.perf_counter()
         prompt_tokens_for_record = 0  # set inside try; default protects finally if interrupted early
+        finish_reason: Optional[str] = None
+        usage: Optional[tuple] = None
 
         try:
             if model_to_use_final != decision.model:
@@ -781,13 +908,25 @@ class BAARRouter:
                 )
             prompt_tokens_for_record = tc(model_to_use_final)
             for chunk in response_stream:
+                usage = _reported_usage(chunk) or usage
+                if not chunk.choices:
+                    continue  # usage-only final chunk (OpenAI include_usage)
                 delta = chunk.choices[0].delta.content or ""
+                finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
                 parts.append(delta)
                 yield delta
         finally:
             full_text = "".join(parts)
             latency_ms = (time.perf_counter() - start_time) * 1000
-            completion_tokens = token_counter(full_text, model=model_to_use_final)
+            if usage is not None:
+                # Provider-reported usage includes hidden reasoning tokens.
+                reported_prompt, completion_tokens = usage
+                # Anthropic's final event can report 0 input tokens; keep our count then.
+                if reported_prompt > 0:
+                    prompt_tokens_for_record = reported_prompt
+            else:
+                completion_tokens = token_counter(full_text, model=model_to_use_final)
+                self._warn_no_stream_usage(model_to_use_final)
             try:
                 # Record actual cost BEFORE cancelling the reservation so that
                 # concurrent threads never see a transient under-count window
@@ -808,6 +947,7 @@ class BAARRouter:
                     attempted_models=attempted_models,
                     failover_count=max(0, len(attempted_models) - 1),
                     failover_errors=failover_errors,
+                    truncated_by_budget=plan.budget_limited and finish_reason == "length",
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
@@ -841,7 +981,15 @@ class BAARRouter:
 
     # ── Async execution ────────────────────────────────────────────────────────
 
-    async def achat(self, task: str, *, messages: Optional[List[dict]] = None, context: Optional[dict] = None) -> str:
+    async def achat(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> str:
         """
         Async version of chat() — identical hard financial guardrails,
         non-blocking for asyncio / FastAPI / aiohttp applications.
@@ -860,12 +1008,22 @@ class BAARRouter:
                 _tc_cache[model] = token_counter(messages=msgs, model=model)
             return _tc_cache[model]
 
+        mode, limit = self._resolve_output_opts(on_output_overrun, max_output_tokens)
         eot = self._expected_output_tokens
 
         # ── 0. Hard Kill-Switch Pre-check ─────────────────────────────────────
         prompt_tokens_est = tc(self.small_model)
+        try:
+            small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit)
+        except BudgetExceeded as e:
+            raise BudgetExhausted(
+                "Kill-switch activated: "
+                f"budget too low (${self.remaining:.6f}) for a useful response "
+                f"on {self.small_model}. Request rejected locally with zero network calls.",
+                remaining=self.remaining,
+            ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, eot
+            self.small_model, prompt_tokens_est, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -881,7 +1039,9 @@ class BAARRouter:
 
         # ── 1. Cheapest-call affordability check ──────────────────────────────
         try:
-            self._tracker.check_affordability(self.small_model, prompt_tokens_est, eot)
+            self._tracker.check_affordability(
+                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            )
         except BudgetExceeded as e:
             raise BudgetExhausted(
                 "Kill-switch activated: "
@@ -916,8 +1076,12 @@ class BAARRouter:
         # ── 3. BIG affordability check — downgrade if necessary ───────────────
         if decision.tier == ModelTier.BIG:
             try:
-                self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
-            except BudgetExceeded as e:
+                # The big model must fit its full response; "truncate" only ever
+                # cuts off the small model after a downgrade.
+                self._check_output_affordable(
+                    self.big_model, tc(self.big_model), eot, mode, limit, uncut=True
+                )
+            except (BudgetExceeded, caps.OutputLimitUnavailable) as e:
                 if "[POLICY FORCE_BIG]" in decision.reason:
                     warnings.warn(
                         f"Policy requested force_big but budget is insufficient "
@@ -928,7 +1092,7 @@ class BAARRouter:
                 decision = self._router.force_small(decision, str(e))
 
         model_to_use = decision.model
-        self._tracker.check_affordability(model_to_use, tc(model_to_use), eot)
+        self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
 
         # ── 3b. Value gate (same logic as chat(), fully ported) ───────────────
         decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, eot)
@@ -941,7 +1105,8 @@ class BAARRouter:
 
         # Atomically check + reserve to prevent concurrent overspend.
         async with self._budget_async_lock:
-            reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), eot)
+            plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
+            reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
@@ -950,14 +1115,25 @@ class BAARRouter:
         # Use try/finally (not except) so BaseException (KeyboardInterrupt, CancelledError etc.)
         # also releases the reservation — prevents permanent budget under-reporting in persistent stores.
         try:
-            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
+            for idx, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+                if idx > 0:
+                    # A fallback may cost more than the primary: top up the reservation
+                    # at the candidate's own price, or skip it if that can't be covered.
+                    try:
+                        plan, reserved = self._cover_fallback(candidate, tc, eot, mode, limit, reserved)
+                    except BudgetExceeded as e:
+                        failover_errors.append(f"{candidate}: skipped, unaffordable ({e})")
+                        continue
+                    except ValueError as e:
+                        failover_errors.append(f"{candidate}: skipped ({e})")
+                        continue
                 attempted_models.append(candidate)
                 # Do NOT re-check affordability here: we already have a reservation
                 # that covers this call. A redundant check against the already-reduced
                 # remaining would reject the primary candidate at low budget (BUG FIX).
                 try:
                     response = await _async_completion_with_retry(
-                        candidate, msgs, timeout=self._call_timeout
+                        candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens
                     )
                     model_to_use = candidate
                     break
@@ -997,6 +1173,7 @@ class BAARRouter:
             attempted_models=attempted_models,
             failover_count=max(0, len(attempted_models) - 1),
             failover_errors=failover_errors,
+            truncated_by_budget=plan.budget_limited and response.choices[0].finish_reason == "length",
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
@@ -1008,6 +1185,8 @@ class BAARRouter:
         *,
         messages: Optional[List[dict]] = None,
         context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Async streaming version of achat() — yields text chunks as they arrive.
@@ -1025,10 +1204,20 @@ class BAARRouter:
                 _tc_cache[model] = token_counter(messages=msgs, model=model)
             return _tc_cache[model]
 
+        mode, limit = self._resolve_output_opts(on_output_overrun, max_output_tokens)
         eot = self._expected_output_tokens
         prompt_tokens_est = tc(self.small_model)
+        try:
+            small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit)
+        except BudgetExceeded as e:
+            raise BudgetExhausted(
+                "Kill-switch activated: "
+                f"budget too low (${self.remaining:.6f}) for a useful response "
+                f"on {self.small_model}. Request rejected locally with zero network calls.",
+                remaining=self.remaining,
+            ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, eot
+            self.small_model, prompt_tokens_est, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -1043,7 +1232,9 @@ class BAARRouter:
             )
 
         try:
-            self._tracker.check_affordability(self.small_model, prompt_tokens_est, eot)
+            self._tracker.check_affordability(
+                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            )
         except BudgetExceeded as e:
             raise BudgetExhausted(
                 "Kill-switch activated: "
@@ -1075,8 +1266,12 @@ class BAARRouter:
 
         if decision.tier == ModelTier.BIG:
             try:
-                self._tracker.check_affordability(self.big_model, tc(self.big_model), eot)
-            except BudgetExceeded as e:
+                # The big model must fit its full response; "truncate" only ever
+                # cuts off the small model after a downgrade.
+                self._check_output_affordable(
+                    self.big_model, tc(self.big_model), eot, mode, limit, uncut=True
+                )
+            except (BudgetExceeded, caps.OutputLimitUnavailable) as e:
                 if "[POLICY FORCE_BIG]" in decision.reason:
                     warnings.warn(
                         f"Policy requested force_big but budget is insufficient "
@@ -1087,14 +1282,15 @@ class BAARRouter:
                 decision = self._router.force_small(decision, str(e))
 
         model_to_use = decision.model
-        self._tracker.check_affordability(model_to_use, tc(model_to_use), eot)
+        self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
         decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, eot)
 
         # ── Reserve budget atomically, then find a working stream ─────────────
         # Reservation precedes the API call so concurrent coroutines cannot both
         # pass the affordability check and both open streams (wasted API calls).
         async with self._budget_async_lock:
-            reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), eot)
+            plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
+            reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
@@ -1106,12 +1302,25 @@ class BAARRouter:
         model_to_use_final = model_to_use
 
         try:
-            for candidate in self._execution_model_candidates(decision.tier, model_to_use):
+            for idx, candidate in enumerate(self._execution_model_candidates(decision.tier, model_to_use)):
+                if idx > 0:
+                    # A fallback may cost more than the primary: top up the reservation
+                    # at the candidate's own price, or skip it if that can't be covered.
+                    try:
+                        plan, reserved = self._cover_fallback(candidate, tc, eot, mode, limit, reserved)
+                    except BudgetExceeded as e:
+                        failover_errors.append(f"{candidate}: skipped, unaffordable ({e})")
+                        continue
+                    except ValueError as e:
+                        failover_errors.append(f"{candidate}: skipped ({e})")
+                        continue
                 attempted_models.append(candidate)
                 # Do NOT re-check affordability here: reservation already covers this call.
                 try:
                     response_stream = await _async_completion_with_retry(
-                        candidate, msgs, stream=True, timeout=self._call_timeout
+                        candidate, msgs, stream=True, timeout=self._call_timeout,
+                        max_tokens=plan.max_tokens,
+                        stream_options=_stream_usage_options(candidate),
                     )
                     model_to_use_final = candidate
                     break
@@ -1132,6 +1341,8 @@ class BAARRouter:
         parts: list[str] = []
         start_time = time.perf_counter()
         prompt_tokens_for_record = 0  # set inside try; default protects finally if interrupted early
+        finish_reason: Optional[str] = None
+        usage: Optional[tuple] = None
 
         try:
             if model_to_use_final != decision.model:
@@ -1142,13 +1353,25 @@ class BAARRouter:
                 )
             prompt_tokens_for_record = tc(model_to_use_final)
             async for chunk in response_stream:
+                usage = _reported_usage(chunk) or usage
+                if not chunk.choices:
+                    continue  # usage-only final chunk (OpenAI include_usage)
                 delta = chunk.choices[0].delta.content or ""
+                finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
                 parts.append(delta)
                 yield delta
         finally:
             full_text = "".join(parts)
             latency_ms = (time.perf_counter() - start_time) * 1000
-            completion_tokens = token_counter(full_text, model=model_to_use_final)
+            if usage is not None:
+                # Provider-reported usage includes hidden reasoning tokens.
+                reported_prompt, completion_tokens = usage
+                # Anthropic's final event can report 0 input tokens; keep our count then.
+                if reported_prompt > 0:
+                    prompt_tokens_for_record = reported_prompt
+            else:
+                completion_tokens = token_counter(full_text, model=model_to_use_final)
+                self._warn_no_stream_usage(model_to_use_final)
             try:
                 record = self._tracker.record_manual(
                     model_to_use_final, prompt_tokens_for_record, completion_tokens
@@ -1166,6 +1389,7 @@ class BAARRouter:
                     attempted_models=attempted_models,
                     failover_count=max(0, len(attempted_models) - 1),
                     failover_errors=failover_errors,
+                    truncated_by_budget=plan.budget_limited and finish_reason == "length",
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
@@ -1445,6 +1669,85 @@ class BAARRouter:
         else:
             return decision, model_to_use
         return self._run_value_gate(task, decision, model_to_use, tc, eot, estimated_value)
+
+    def _resolve_output_opts(
+        self, on_output_overrun: Optional[str], max_output_tokens: Optional[int]
+    ) -> tuple:
+        """Per-call overrides win over router config. Returns (mode, max_output_tokens)."""
+        mode = on_output_overrun if on_output_overrun is not None else self._on_output_overrun
+        caps.validate_mode(mode)
+        limit = max_output_tokens if max_output_tokens is not None else self._max_output_tokens
+        if limit is not None and limit < 1:
+            raise ValueError("max_output_tokens must be a positive integer or None")
+        return mode, limit
+
+    def _plan_output(
+        self,
+        model: str,
+        prompt_tokens: int,
+        eot: int,
+        mode: str,
+        limit: Optional[int],
+        remaining: Optional[float] = None,
+    ) -> caps.OutputPlan:
+        return caps.plan_output(
+            mode,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            expected_output_tokens=eot,
+            remaining=self._tracker.remaining if remaining is None else remaining,
+            tracker=self._tracker,
+            max_output_tokens=limit,
+            min_useful_tokens=self._min_useful_tokens,
+        )
+
+    def _check_output_affordable(
+        self,
+        model: str,
+        prompt_tokens: int,
+        eot: int,
+        mode: str,
+        limit: Optional[int],
+        uncut: bool = False,
+    ) -> None:
+        """
+        Raise BudgetExceeded if ``model`` can't cover its planned output.
+        With ``uncut=True``, "truncate" mode checks the full response instead of
+        a budget-shortened one.
+        """
+        if uncut and mode == "truncate":
+            tokens = caps.uncut_output_tokens(model, prompt_tokens, eot, limit)
+        else:
+            tokens = self._plan_output(model, prompt_tokens, eot, mode, limit).completion_tokens
+        self._tracker.check_affordability(model, prompt_tokens, tokens)
+
+    def _warn_no_stream_usage(self, model: str) -> None:
+        if model in self._no_stream_usage_warned:
+            return
+        self._no_stream_usage_warned.add(model)
+        warnings.warn(
+            f"Stream for model '{model}' reported no usage; recording visible text tokens only. "
+            "Hidden reasoning tokens (if any) are not counted, so spend may be under-recorded.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    def _cover_fallback(self, candidate: str, tc, eot: int, mode: str, limit: Optional[int], reserved: float) -> tuple:
+        """
+        Plan a fallback candidate and top up the reservation if it costs more
+        than what is already held. Returns (plan, new_reserved).
+        Raises BudgetExceeded if the extra amount can't be reserved.
+        """
+        # Our own reservation is already counted as spent, so it is available to this call.
+        plan = self._plan_output(
+            candidate, tc(candidate), eot, mode, limit,
+            remaining=self._tracker.remaining + reserved,
+        )
+        needed = self._tracker.estimate_cost(candidate, tc(candidate), plan.completion_tokens)
+        if needed > reserved:
+            self._tracker.check_and_reserve(needed - reserved)
+            reserved = needed
+        return plan, reserved
 
     def _execution_model_candidates(self, tier: ModelTier, chosen_model: str) -> List[str]:
         extras = self._big_fallback_models if tier == ModelTier.BIG else self._small_fallback_models

@@ -229,7 +229,7 @@ def create_app(
 
         if req.stream:
             return StreamingResponse(
-                _stream_response(router, task, messages, completion_id, created),
+                _stream_response(router, task, messages, completion_id, created, req.max_tokens),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -239,7 +239,7 @@ def create_app(
 
         # ── Non-streaming ──────────────────────────────────────────────────────
         try:
-            reply = await router.achat(task, messages=messages)
+            reply = await router.achat(task, messages=messages, **_output_kwargs(req.max_tokens))
         except BudgetExhausted as exc:
             raise _budget_error(exc)
         except (BudgetExceeded,) as exc:
@@ -256,6 +256,11 @@ def create_app(
     return app
 
 
+def _output_kwargs(max_tokens: Optional[int]) -> Dict[str, Any]:
+    """Forward the request's own max_tokens as the router's output limit, only when set."""
+    return {"max_output_tokens": max_tokens} if max_tokens is not None else {}
+
+
 # ── Streaming generator ───────────────────────────────────────────────────────
 
 async def _stream_response(
@@ -264,13 +269,14 @@ async def _stream_response(
     messages: List[Dict[str, str]],
     completion_id: str,
     created: int,
+    max_tokens: Optional[int] = None,
 ) -> AsyncIterator[str]:
     model_used = "baar"
     try:
         # Opening delta — role announcement
         yield _make_chunk(completion_id, created, model_used, "", finish_reason=None)
 
-        async for chunk_text in router.astream_chat(task, messages=messages):
+        async for chunk_text in router.astream_chat(task, messages=messages, **_output_kwargs(max_tokens)):
             yield _make_chunk(completion_id, created, model_used, chunk_text)
 
         # After streaming completes, update model name from log

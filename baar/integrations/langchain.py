@@ -80,6 +80,12 @@ def _last_human_content(messages: Sequence[BaseMessage]) -> str:
     return ""
 
 
+def _output_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Forward a bound max_tokens (e.g. llm.bind(max_tokens=...)) as the router's output limit."""
+    max_tokens = kwargs.get("max_tokens")
+    return {"max_output_tokens": max_tokens} if max_tokens is not None else {}
+
+
 def _extract_model(serialized: Dict[str, Any], kwargs: Dict[str, Any]) -> str:
     """Best-effort model name extraction from LangChain callback context."""
     # LangChain puts the model name in different places depending on the LLM class
@@ -328,7 +334,7 @@ class BaarChatModel(BaseChatModel):
     ) -> ChatResult:
         task = _last_human_content(messages)
         msg_dicts = _messages_to_dicts(messages)
-        reply = self._router.chat(task, messages=msg_dicts)
+        reply = self._router.chat(task, messages=msg_dicts, **_output_kwargs(kwargs))
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=reply))])
 
     def _stream(
@@ -340,7 +346,7 @@ class BaarChatModel(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         task = _last_human_content(messages)
         msg_dicts = _messages_to_dicts(messages)
-        for chunk_text in self._router.stream_chat(task, messages=msg_dicts):
+        for chunk_text in self._router.stream_chat(task, messages=msg_dicts, **_output_kwargs(kwargs)):
             chunk = ChatGenerationChunk(message=AIMessageChunk(content=chunk_text))
             if run_manager:
                 run_manager.on_llm_new_token(chunk_text, chunk=chunk)
@@ -357,7 +363,7 @@ class BaarChatModel(BaseChatModel):
     ) -> ChatResult:
         task = _last_human_content(messages)
         msg_dicts = _messages_to_dicts(messages)
-        reply = await self._router.achat(task, messages=msg_dicts)
+        reply = await self._router.achat(task, messages=msg_dicts, **_output_kwargs(kwargs))
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=reply))])
 
     async def _astream(
@@ -372,7 +378,7 @@ class BaarChatModel(BaseChatModel):
         # event loop on every chunk — defeating async entirely.
         task = _last_human_content(messages)
         msg_dicts = _messages_to_dicts(messages)
-        async for chunk_text in self._router.astream_chat(task, messages=msg_dicts):
+        async for chunk_text in self._router.astream_chat(task, messages=msg_dicts, **_output_kwargs(kwargs)):
             chunk = ChatGenerationChunk(message=AIMessageChunk(content=chunk_text))
             if run_manager:
                 await run_manager.on_llm_new_token(chunk_text, chunk=chunk)

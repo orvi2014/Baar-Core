@@ -523,6 +523,28 @@ Run it yourself: `pip install baar-core datasets` then `baar-bench --limit 10 --
 The key difference: every alternative routes and tracks. Baar-Core **prevents** — the exception is raised before a single byte leaves your machine.
 
 
+## Output limits
+
+The pre-flight check covers the prompt, but the response is where cost can run away: one long answer, or a reasoning model's hidden thinking tokens, can cost more than the estimate. `on_output_overrun` decides how Baar handles that:
+
+```python
+router = BAARRouter(budget=0.10, on_output_overrun="preflight", max_output_tokens=2000)
+
+# or per call
+router.chat("Write the full report", on_output_overrun="truncate")
+```
+
+| Mode | Response cut off? | Budget overshoot? | Behaviour |
+|---|---|---|---|
+| `"estimate"` (default) | Never | Possible | Reserves the expected output. Same as before. |
+| `"preflight"` | Never | Never | Reserves the worst-case output before the call. If it doesn't fit, downgrades to the small model or raises `BudgetExhausted` locally. |
+| `"truncate"` | Only if you opt in | Never | Sets `max_tokens` from the remaining budget. Downgrades first; only the small model's response can be cut off, and it is flagged `truncated_by_budget=True`. |
+
+`preflight` is most useful with your own `max_output_tokens`: without one, the worst case is the model's full max output (16k+ tokens), which blocks more calls near the end of a budget. The limit is always capped by the room left in the model's context window.
+
+Streaming calls record the provider's reported usage, including hidden reasoning tokens.
+
+
 ## Security
 
 Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.
