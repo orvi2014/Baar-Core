@@ -542,6 +542,7 @@ router.chat("Write the full report", on_output_overrun="truncate")
 | `"estimate"` (default) | Never | Possible | Reserves the expected output. Same as before. |
 | `"preflight"` | Never | Never* | Reserves the worst-case output before the call. If it doesn't fit, downgrades to the small model or raises `BudgetExhausted` locally. |
 | `"truncate"` | Only if you opt in | Never* | Sets `max_tokens` from the remaining budget. Downgrades first; only the small model's response can be cut off, and it is flagged `truncated_by_budget=True`. |
+| `"continue"` | Only when the money runs out | Never* | Generates the answer in segments of `segment_tokens` (2000), reserving one segment at a time; a segment that stops at its limit is continued ("continue exactly where you stopped"). Ends when the model finishes, `max_output_tokens` (the total) is reached, `max_segments` (8) is hit, or another segment can't be paid for — then the text so far is returned, flagged `truncated_by_budget=True`. |
 
 \* Prompt tokens are an estimate (exact for OpenAI text; approximate for Claude, Gemini, images and tool schemas), so these modes price the prompt with a 20% margin (`prompt_margin=0.2`). An undercount larger than that can still overshoot slightly.
 
