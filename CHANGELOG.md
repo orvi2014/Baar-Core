@@ -5,6 +5,11 @@ All notable changes to baar-core are documented here.
 ## [Unreleased]
 
 ### Added
+- **OverThink benchmark** (`benchmarks/overthink_eval.py`) — a deterministic agent run under
+  inflated hidden reasoning (OverThink, arXiv 2502.02542) against a simulated reasoning
+  model, comparing post-hoc alerts and each output mode on overshoot, cut-off answers,
+  tasks done and budget used. Seeds 1–30: alerts and `estimate` overshoot; `preflight`,
+  `preflight` + `thinking_budget` and `truncate` never do; `preflight` never cuts an answer.
 - **`overrun_risk`** (default 0) — in `"preflight"`, reserve the split-conformal
   (1 − risk) quantile of the output lengths each model actually produced, instead of its
   full max output. `max_tokens` is unchanged, so responses are never cut off; at most about

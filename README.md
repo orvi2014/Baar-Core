@@ -567,6 +567,22 @@ On Claude this also makes `preflight` practical: the worst case drops from the m
 Streaming calls record the provider's reported usage, including hidden reasoning tokens. If you stop reading a stream early, Baar closes it and, in `preflight` / `truncate`, records the reserved output rather than just the text you read. The value gate (`value_fn`) compares a task's value with its *expected* cost, not the worst case these modes reserve.
 
 
+### OverThink eval
+
+`python benchmarks/overthink_eval.py` replays an agent run under the *OverThink* attack (arXiv 2502.02542): decoys hidden in what the model reads multiply its hidden reasoning (×10–46 here, up to ×46 in the paper) while the answer looks normal. 150 tasks, 30% poisoned, a $5.00 budget, a simulated Claude-class reasoning model ($3 / $15 per million tokens, 64k max output). Baar's real pricing and limits run unmodified; only the provider is simulated, and it honours `max_tokens` and the thinking budget like real APIs do. Seed 7:
+
+| Setup | Done | Cut off by a limit | Overshoot | Budget used |
+|---|---|---|---|---|
+| alert only (post-hoc) | 51 | 0 | $0.2132 | 100.0% |
+| `estimate` (default) | 51 | 0 | $0.2132 | 100.0% |
+| `preflight` | 35 | 0 | $0.0000 | 81.0% |
+| `preflight` + `thinking_budget=2048`, `max_output_tokens=2000` | 150 | 0 | $0.0000 | 72.3% |
+| `preflight` + `overrun_risk=0.05` | 40 | 0 | $0.0000 | 92.1% |
+| `truncate` | 51 | 1 | $0.0000 | 100.0% |
+
+Over seeds 1–30: post-hoc alerts overshoot in 30/30 runs and the default `estimate` in 27/30 (up to $0.66). `preflight`, `preflight` + thinking and `truncate` never overshoot, and `preflight` never cuts an answer off. `overrun_risk=0.05` overshoots in 2/30 runs (up to $0.16) — the risk it accepts in exchange for using more of the budget. Capping thinking finishes every task because poisoned tasks stop being expensive; the simulation assumes the answer is unaffected by the cap, which real models don't guarantee. If you expect adversarial content, use `preflight` (or `truncate`) and set a `thinking_budget` on reasoning models.
+
+
 ## Security
 
 Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.
