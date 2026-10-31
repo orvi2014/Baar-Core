@@ -268,10 +268,14 @@ class BudgetTracker:
             )
             return self._UNKNOWN_MODEL_FALLBACK_COST
 
-    def output_price_per_token(self, model: str) -> Optional[float]:
-        """USD price of one completion token for ``model``, or None if LiteLLM has no pricing."""
+    def output_price_per_token(self, model: str, prompt_tokens: int = 0) -> Optional[float]:
+        """
+        USD price of one completion token for ``model``, or None if LiteLLM has no pricing.
+        Pass the real ``prompt_tokens`` for models whose rates rise with prompt length
+        (e.g. Gemini 2.5 Pro above 200k tokens).
+        """
         try:
-            _, out_cost = cost_per_token(model=model, prompt_tokens=0, completion_tokens=1)
+            _, out_cost = cost_per_token(model=model, prompt_tokens=prompt_tokens, completion_tokens=1)
             price = float(out_cost)
         except Exception:
             return None

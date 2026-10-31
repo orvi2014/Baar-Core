@@ -26,8 +26,13 @@ All notable changes to baar-core are documented here.
 - `StepResult.truncated_by_budget` — `True` only when Baar's budget-derived limit cut a
   response off (never for your own `max_output_tokens`). Counted in
   `RoutingLog.summary()["truncated_by_budget_steps"]`.
-- Vercel proxy and LangChain `BaarChatModel` forward a request's own `max_tokens` as
-  `max_output_tokens`.
+- `max_call_share` (default 1.0) — in `"truncate"` mode, the largest share of the
+  remaining budget one call may reserve, so concurrent calls near the cap aren't all
+  blocked by the first one.
+- Vercel proxy, LangChain `BaarChatModel` and CrewAI `BaarCrewLLM` forward the request's
+  or LLM's own `max_tokens` as `max_output_tokens`. The Vercel proxy also accepts
+  `max_completion_tokens` (used by newer OpenAI SDKs; it wins over `max_tokens`) and
+  returns `400 invalid_request_error` for a non-positive limit instead of a 500.
 
 ### Fixed
 - **Streaming under-recorded spend.** `stream_chat` / `astream_chat` counted only the
@@ -36,6 +41,13 @@ All notable changes to baar-core are documented here.
   `stream_options={"include_usage": True}` where LiteLLM supports it, and also read the
   totals LiteLLM attaches to the final chunk (Anthropic). If a stream reports no usage,
   Baar falls back to counting visible text and warns once per model.
+- **`"truncate"` ignored tiered pricing.** The output price was read at prompt length 0,
+  so models whose rates rise with prompt length (e.g. Gemini 2.5 Pro above 200k tokens)
+  were planned at the cheaper rate and the call was then rejected. The price now uses
+  the real prompt length.
+- **The value gate compared against the wrong cost.** With `"preflight"` it compared a
+  task's value with the expected-output cost instead of the worst-case cost Baar
+  actually reserves. It now uses the planned cost.
 - **Failover could overshoot the budget.** The reservation covered only the primary
   model; a pricier fallback ran unreserved. Each fallback is now covered at its own
   price — the reservation is topped up, or the fallback is skipped if that can't be

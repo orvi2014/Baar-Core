@@ -540,7 +540,7 @@ router.chat("Write the full report", on_output_overrun="truncate")
 | `"preflight"` | Never | Never | Reserves the worst-case output before the call. If it doesn't fit, downgrades to the small model or raises `BudgetExhausted` locally. |
 | `"truncate"` | Only if you opt in | Never | Sets `max_tokens` from the remaining budget. Downgrades first; only the small model's response can be cut off, and it is flagged `truncated_by_budget=True`. |
 
-`preflight` is most useful with your own `max_output_tokens`: without one, the worst case is the model's full max output (16k+ tokens), which blocks more calls near the end of a budget. The limit is always capped by the room left in the model's context window.
+`preflight` is most useful with your own `max_output_tokens`: without one, the worst case is the model's full max output (16k+ tokens), which blocks more calls near the end of a budget. The limit is always capped by the room left in the model's context window. In `truncate` mode, `max_call_share=0.5` stops one call from reserving more than half of what's left, so concurrent calls near the cap still get through.
 
 Streaming calls record the provider's reported usage, including hidden reasoning tokens.
 

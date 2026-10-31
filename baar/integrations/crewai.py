@@ -132,6 +132,11 @@ class BaarCrewLLM(_CrewAILLM):
         super().__init__(**kwargs)
         self._baar_router = router
 
+    def _output_kwargs(self) -> Dict[str, Any]:
+        """Forward this LLM's own max_tokens (crewai.LLM(max_tokens=...)) as the router's output limit."""
+        max_tokens = getattr(self, "max_tokens", None)
+        return {"max_output_tokens": max_tokens} if isinstance(max_tokens, int) else {}
+
     # ── Budget properties ─────────────────────────────────────────────────────
 
     @property
@@ -165,7 +170,7 @@ class BaarCrewLLM(_CrewAILLM):
     ) -> str:
         """Route the LLM call through BAARRouter (sync)."""
         task = _last_user_content(messages)
-        return self._baar_router.chat(task, messages=messages)
+        return self._baar_router.chat(task, messages=messages, **self._output_kwargs())
 
     async def acall(
         self,
@@ -176,7 +181,7 @@ class BaarCrewLLM(_CrewAILLM):
     ) -> str:
         """Route the LLM call through BAARRouter (async)."""
         task = _last_user_content(messages)
-        return await self._baar_router.achat(task, messages=messages)
+        return await self._baar_router.achat(task, messages=messages, **self._output_kwargs())
 
 
 # ── BaarStepCallback ──────────────────────────────────────────────────────────

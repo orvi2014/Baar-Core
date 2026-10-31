@@ -83,6 +83,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     stream: bool = False
     max_tokens: Optional[int] = None
+    max_completion_tokens: Optional[int] = None  # newer OpenAI SDKs send this instead of max_tokens
     temperature: Optional[float] = None
     # Extra OpenAI fields accepted but ignored — makes SDK compatibility seamless
     top_p: Optional[float] = None
@@ -140,6 +141,27 @@ def _budget_error(exc: BudgetExhausted) -> HTTPException:
             }
         },
     )
+
+
+def _output_limit(req: "ChatRequest") -> Optional[int]:
+    """
+    The request's output limit: max_completion_tokens wins over the older max_tokens,
+    as in OpenAI's API. Raises a 400 for a non-positive value.
+    """
+    for field in ("max_tokens", "max_completion_tokens"):
+        value = getattr(req, field)
+        if value is not None and value < 1:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": f"{field} must be a positive integer, got {value}",
+                        "type": "invalid_request_error",
+                        "param": field,
+                    }
+                },
+            )
+    return req.max_completion_tokens if req.max_completion_tokens is not None else req.max_tokens
 
 
 def _reject_error(exc: TaskRejected) -> HTTPException:
@@ -226,10 +248,11 @@ def create_app(
         messages = [{"role": m.role, "content": m.content} for m in req.messages]
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
+        max_tokens = _output_limit(req)
 
         if req.stream:
             return StreamingResponse(
-                _stream_response(router, task, messages, completion_id, created, req.max_tokens),
+                _stream_response(router, task, messages, completion_id, created, max_tokens),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -239,7 +262,7 @@ def create_app(
 
         # ── Non-streaming ──────────────────────────────────────────────────────
         try:
-            reply = await router.achat(task, messages=messages, **_output_kwargs(req.max_tokens))
+            reply = await router.achat(task, messages=messages, **_output_kwargs(max_tokens))
         except BudgetExhausted as exc:
             raise _budget_error(exc)
         except (BudgetExceeded,) as exc:

@@ -125,9 +125,13 @@ def plan_output(
     tracker: BudgetTracker,
     max_output_tokens: Optional[int] = None,
     min_useful_tokens: int = 64,
+    max_call_share: float = 1.0,
 ) -> OutputPlan:
     """
     Plan the output side of one call to ``model``.
+
+    ``max_call_share`` (0–1] limits how much of ``remaining`` one "truncate" call
+    may reserve, leaving room for concurrent calls near the cap.
 
     Raises:
         ValueError:             unknown mode.
@@ -156,19 +160,20 @@ def plan_output(
     limit = output_limit(model, prompt_tokens, max_output_tokens)
 
     # mode == "truncate"
-    price = tracker.output_price_per_token(model)
+    price = tracker.output_price_per_token(model, prompt_tokens)
     if not price:
         # No output pricing: the budget cannot bound the length, so fall back
         # to the plain limit (or the expected output if there is none).
         tokens = limit if limit is not None else expected_output_tokens
         return OutputPlan(tokens, tokens)
 
+    allowance = remaining * max_call_share
     input_cost = tracker.estimate_cost(model, prompt_tokens, 0)
-    affordable = math.floor((remaining - input_cost) / price) if remaining > input_cost else 0
+    affordable = math.floor((allowance - input_cost) / price) if allowance > input_cost else 0
     if affordable < min_useful_tokens:
         raise BudgetExceeded(
             requested=input_cost + min_useful_tokens * price,
-            remaining=remaining,
+            remaining=allowance,
             model=model,
         )
     if limit is not None and limit <= affordable:

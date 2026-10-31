@@ -28,12 +28,20 @@ from baar.core.caps import OutputLimitUnavailable, OutputPlan, plan_output
 
 IN_PRICE = {"gpt-4o-mini": 1.5e-7, "gpt-4o": 2.5e-6, "cheap-fallback": 1e-7}
 OUT_PRICE = {"gpt-4o-mini": 6e-7, "gpt-4o": 1e-5, "cheap-fallback": 4e-7}
-MAX_OUT = {"gpt-4o-mini": 16384, "gpt-4o": 16384, "cheap-fallback": 8192}
-CONTEXT = {"gpt-4o-mini": 128000, "gpt-4o": 128000, "cheap-fallback": 32000}
+MAX_OUT = {"gpt-4o-mini": 16384, "gpt-4o": 16384, "cheap-fallback": 8192, "tiered-model": 65536}
+CONTEXT = {"gpt-4o-mini": 128000, "gpt-4o": 128000, "cheap-fallback": 32000, "tiered-model": 1_000_000}
+
+# Gemini-2.5-Pro-style tiered pricing: both rates rise once the prompt passes 200k tokens.
+TIER_AT = 200_000
+TIERED_IN = (1.25e-6, 2.5e-6)
+TIERED_OUT = (1e-5, 1.5e-5)
 PROMPT_TOKENS = 100
 
 
 def _fake_cost_per_token(model, prompt_tokens=0, completion_tokens=0, **_):
+    if model == "tiered-model":
+        tier = 1 if prompt_tokens > TIER_AT else 0
+        return prompt_tokens * TIERED_IN[tier], completion_tokens * TIERED_OUT[tier]
     if model not in IN_PRICE:
         raise Exception(f"no pricing for {model}")
     return prompt_tokens * IN_PRICE[model], completion_tokens * OUT_PRICE[model]
@@ -762,3 +770,153 @@ class TestTruncateDowngradesFirst:
             router.chat("hello")
         assert m.call_args.kwargs["model"] == "gpt-4o"
         assert m.call_args.kwargs["max_tokens"] == 500
+
+
+# ── Review fix #5: tiered pricing uses the real prompt length ─────────────────
+
+class TestTieredPricing:
+    def test_output_price_uses_prompt_tier(self, priced):
+        t = BudgetTracker(total_budget=1.0)
+        assert t.output_price_per_token("tiered-model") == pytest.approx(TIERED_OUT[0])
+        assert t.output_price_per_token("tiered-model", prompt_tokens=250_000) == pytest.approx(TIERED_OUT[1])
+
+    def test_truncate_long_prompt_fits_remaining(self, priced):
+        prompt = 250_000
+        remaining = cost("tiered-model", 300, prompt_tokens=prompt) + TIERED_OUT[1] / 2
+        p = plan_output("truncate", model="tiered-model", prompt_tokens=prompt, expected_output_tokens=500,
+                        remaining=remaining, tracker=BudgetTracker(total_budget=10.0))
+        assert p.max_tokens == 300
+        assert cost("tiered-model", p.max_tokens, prompt_tokens=prompt) <= remaining
+
+
+# ── Review fix #6: optional cap on one truncate call's share of the budget ────
+
+class TestMaxCallShare:
+    def test_default_is_whole_remaining(self):
+        assert make_router().config.max_call_share == 1.0
+
+    @pytest.mark.parametrize("bad", [0, -0.1, 1.5])
+    def test_invalid_share_rejected(self, bad):
+        with pytest.raises(ValueError, match="max_call_share"):
+            make_router(max_call_share=bad)
+
+    def test_plan_limits_reservation_to_share(self, priced):
+        remaining = 0.002
+        p = plan_output("truncate", model="gpt-4o-mini", prompt_tokens=PROMPT_TOKENS,
+                        expected_output_tokens=500, remaining=remaining,
+                        tracker=BudgetTracker(total_budget=10.0), max_call_share=0.5)
+        assert cost("gpt-4o-mini", p.max_tokens) <= remaining * 0.5
+        assert p.budget_limited is True
+
+    def test_router_truncate_leaves_room_for_concurrent_calls(self, priced):
+        router = make_router(budget=0.002, on_output_overrun="truncate", max_call_share=0.5)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()) as m:
+            router.chat("hello")
+        assert cost("gpt-4o-mini", m.call_args.kwargs["max_tokens"]) <= 0.001
+
+    def test_share_does_not_affect_preflight(self, priced):
+        router = make_router(budget=1.0, on_output_overrun="preflight", max_call_share=0.1)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()) as m:
+            router.chat("hello")
+        assert m.call_args.kwargs["max_tokens"] == MAX_OUT["gpt-4o-mini"]
+
+
+# ── Review fix #7: integrations forward output limits ─────────────────────────
+
+class TestIntegrationLimitsFollowUp:
+    def _vercel_client(self, router):
+        pytest.importorskip("fastapi", reason="fastapi not installed")
+        from fastapi.testclient import TestClient
+        from baar.integrations.vercel import create_app
+        return TestClient(create_app(router), raise_server_exceptions=False)
+
+    def _post(self, client, **extra):
+        return client.post("/v1/chat/completions", json={
+            "model": "baar", "messages": [{"role": "user", "content": "Say hello"}], **extra,
+        })
+
+    def test_vercel_forwards_max_completion_tokens(self):
+        router = make_router(budget=1.0)
+        client = self._vercel_client(router)
+        with patch.object(router, "achat", new_callable=AsyncMock, return_value="hi") as m:
+            assert self._post(client, max_completion_tokens=222).status_code == 200
+        assert m.call_args.kwargs["max_output_tokens"] == 222
+
+    def test_vercel_max_completion_tokens_wins_over_max_tokens(self):
+        router = make_router(budget=1.0)
+        client = self._vercel_client(router)
+        with patch.object(router, "achat", new_callable=AsyncMock, return_value="hi") as m:
+            self._post(client, max_tokens=100, max_completion_tokens=222)
+        assert m.call_args.kwargs["max_output_tokens"] == 222
+
+    @pytest.mark.parametrize("field", ["max_tokens", "max_completion_tokens"])
+    def test_vercel_invalid_limit_is_400(self, field):
+        router = make_router(budget=1.0)
+        client = self._vercel_client(router)
+        with patch.object(router, "achat", new_callable=AsyncMock, return_value="hi") as m:
+            resp = self._post(client, **{field: 0})
+        assert resp.status_code == 400
+        assert "invalid_request_error" in resp.text
+        m.assert_not_called()
+
+    def test_vercel_invalid_limit_is_400_when_streaming(self):
+        router = make_router(budget=1.0)
+        client = self._vercel_client(router)
+        assert self._post(client, stream=True, max_tokens=-1).status_code == 400
+
+    def _crew_llm_class(self):
+        import sys
+        if "crewai" not in sys.modules:
+            class _FakeCrewAILLM:
+                def __init__(self, **kwargs):
+                    for k, v in kwargs.items():
+                        setattr(self, k, v)
+            sys.modules["crewai"] = MagicMock(LLM=_FakeCrewAILLM)
+        from baar.integrations.crewai import BaarCrewLLM
+        return BaarCrewLLM
+
+    def test_crewai_forwards_max_tokens(self):
+        BaarCrewLLM = self._crew_llm_class()
+        router = make_router(budget=1.0)
+        llm = BaarCrewLLM(router=router, max_tokens=300)
+        with patch.object(router, "chat", return_value="ok") as m:
+            llm.call([{"role": "user", "content": "hi"}])
+        assert m.call_args.kwargs["max_output_tokens"] == 300
+
+    def test_crewai_without_max_tokens_sends_no_limit(self):
+        BaarCrewLLM = self._crew_llm_class()
+        router = make_router(budget=1.0)
+        llm = BaarCrewLLM(router=router)
+        with patch.object(router, "chat", return_value="ok") as m:
+            llm.call([{"role": "user", "content": "hi"}])
+        assert "max_output_tokens" not in m.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_crewai_acall_forwards_max_tokens(self):
+        BaarCrewLLM = self._crew_llm_class()
+        router = make_router(budget=1.0)
+        llm = BaarCrewLLM(router=router, max_tokens=300)
+        with patch.object(router, "achat", new_callable=AsyncMock, return_value="ok") as m:
+            await llm.acall([{"role": "user", "content": "hi"}])
+        assert m.call_args.kwargs["max_output_tokens"] == 300
+
+
+# ── Review fix #8: value gate uses the planned output cost ────────────────────
+
+class TestValueGateUsesPlan:
+    def test_value_gate_estimate_matches_preflight_reservation(self, priced):
+        router = make_router(budget=1.0, on_output_overrun="preflight", value_fn=lambda t: 0.5)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()):
+            router.chat("hello")
+        decision = router.log.steps[-1].decision
+        assert decision.estimated_cost_usd == pytest.approx(cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"]))
+
+    def test_value_gate_rejects_when_worst_case_exceeds_value(self, priced):
+        from baar import TaskRejected
+        # Worth more than the expected cost, but less than the worst-case reservation.
+        worst = cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"])
+        router = make_router(budget=1.0, on_output_overrun="preflight", value_fn=lambda t: worst / 10)
+        with patch("baar.router.litellm.completion") as m:
+            with pytest.raises(TaskRejected):
+                router.chat("hello")
+            m.assert_not_called()

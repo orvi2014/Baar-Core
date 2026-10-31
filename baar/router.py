@@ -236,6 +236,7 @@ class BAARConfig:
     on_output_overrun: str = "estimate"  # "estimate" | "preflight" | "truncate" — see baar.core.caps
     max_output_tokens: Optional[int] = None
     min_useful_tokens: int = 64  # "truncate" blocks locally below this many affordable tokens
+    max_call_share: float = 1.0  # "truncate": largest share of the remaining budget one call may reserve
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -316,6 +317,7 @@ class BAARRouter:
         on_output_overrun: str = "estimate",
         max_output_tokens: Optional[int] = None,
         min_useful_tokens: int = 64,
+        max_call_share: float = 1.0,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -353,6 +355,7 @@ class BAARRouter:
             on_output_overrun=on_output_overrun,
             max_output_tokens=max_output_tokens,
             min_useful_tokens=min_useful_tokens,
+            max_call_share=max_call_share,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -368,6 +371,8 @@ class BAARRouter:
             raise ValueError("max_output_tokens must be a positive integer or None")
         if config.min_useful_tokens < 1:
             raise ValueError("min_useful_tokens must be a positive integer")
+        if not 0 < config.max_call_share <= 1:
+            raise ValueError("max_call_share must be in (0, 1]")
 
         self.small_model = config.small_model
         self.big_model = config.big_model
@@ -377,6 +382,7 @@ class BAARRouter:
         self._on_output_overrun = config.on_output_overrun
         self._max_output_tokens = config.max_output_tokens
         self._min_useful_tokens = int(config.min_useful_tokens)
+        self._max_call_share = float(config.max_call_share)
         self._no_stream_usage_warned: set = set()
         self._domain_model_overrides = config.domain_model_overrides or {}
         for _domain, _override in self._domain_model_overrides.items():
@@ -647,7 +653,7 @@ class BAARRouter:
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
 
         # ── 3b. Value gate ────────────────────────────────────────────────────
-        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, eot)
+        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
 
         # ── 4. Execution with concurrency-safe budget reservation ─────────────
         # Initialise locals before reservation so a KeyboardInterrupt in the
@@ -838,7 +844,7 @@ class BAARRouter:
 
         model_to_use = decision.model
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
-        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, eot)
+        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
 
         # ── 2. Reserve budget atomically, then find a working stream ──────────
         # Locals are initialised before reservation so a KeyboardInterrupt in
@@ -1095,7 +1101,7 @@ class BAARRouter:
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
 
         # ── 3b. Value gate (same logic as chat(), fully ported) ───────────────
-        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, eot)
+        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
 
         # ── 4. Execution with concurrency-safe budget reservation ─────────────
         start_time = time.perf_counter()
@@ -1283,7 +1289,7 @@ class BAARRouter:
 
         model_to_use = decision.model
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
-        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, eot)
+        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
 
         # ── Reserve budget atomically, then find a working stream ─────────────
         # Reservation precedes the API call so concurrent coroutines cannot both
@@ -1515,15 +1521,17 @@ class BAARRouter:
         decision,
         model_to_use: str,
         tc,
-        eot: int,
+        out_tokens: Callable[[str], int],
         estimated_value: float,
     ) -> tuple:
         """
         Shared value gate logic called by both sync and async paths.
+        ``out_tokens(model)`` is the completion tokens Baar will reserve for ``model``,
+        so value is compared against the same cost the call is planned for.
         Returns (decision, model_to_use). Raises TaskRejected if the task is rejected.
         """
         prompt_tokens = tc(model_to_use)
-        estimated_cost = self._tracker.estimate_cost(model_to_use, prompt_tokens, eot)
+        estimated_cost = self._tracker.estimate_cost(model_to_use, prompt_tokens, out_tokens(model_to_use))
 
         # Warn on early samples if value scale looks wrong for USD.
         if self._value_gate_samples < 5:
@@ -1577,7 +1585,7 @@ class BAARRouter:
                     estimated_cost_usd=round(estimated_cost, 8),
                 )
                 model_to_use = self.small_model
-                self._tracker.check_affordability(model_to_use, tc(model_to_use), eot)
+                self._tracker.check_affordability(model_to_use, tc(model_to_use), out_tokens(model_to_use))
             else:
                 with self._value_gate_lock:
                     self._value_gate_rejects += 1
@@ -1628,7 +1636,7 @@ class BAARRouter:
                     estimated_cost_usd=round(estimated_cost, 8),
                 )
                 model_to_use = self.small_model
-                self._tracker.check_affordability(model_to_use, tc(model_to_use), eot)
+                self._tracker.check_affordability(model_to_use, tc(model_to_use), out_tokens(model_to_use))
 
         return decision, model_to_use
 
@@ -1638,7 +1646,7 @@ class BAARRouter:
         decision,
         model_to_use: str,
         tc,
-        eot: int,
+        out_tokens: Callable[[str], int],
     ) -> tuple:
         """
         Apply the value gate if value_fn is configured (sync path).
@@ -1647,7 +1655,7 @@ class BAARRouter:
         if self._value_fn is None:
             return decision, model_to_use
         estimated_value = float(self._value_fn(task))
-        return self._run_value_gate(task, decision, model_to_use, tc, eot, estimated_value)
+        return self._run_value_gate(task, decision, model_to_use, tc, out_tokens, estimated_value)
 
     async def _aapply_value_gate(
         self,
@@ -1655,7 +1663,7 @@ class BAARRouter:
         decision,
         model_to_use: str,
         tc,
-        eot: int,
+        out_tokens: Callable[[str], int],
     ) -> tuple:
         """
         Apply the value gate if value_fn or async_value_fn is configured (async path).
@@ -1668,7 +1676,7 @@ class BAARRouter:
             estimated_value = float(self._value_fn(task))
         else:
             return decision, model_to_use
-        return self._run_value_gate(task, decision, model_to_use, tc, eot, estimated_value)
+        return self._run_value_gate(task, decision, model_to_use, tc, out_tokens, estimated_value)
 
     def _resolve_output_opts(
         self, on_output_overrun: Optional[str], max_output_tokens: Optional[int]
@@ -1699,7 +1707,12 @@ class BAARRouter:
             tracker=self._tracker,
             max_output_tokens=limit,
             min_useful_tokens=self._min_useful_tokens,
+            max_call_share=self._max_call_share,
         )
+
+    def _planned_tokens(self, tc, eot: int, mode: str, limit: Optional[int]) -> Callable[[str], int]:
+        """model -> completion tokens the call would be planned (and reserved) for."""
+        return lambda model: self._plan_output(model, tc(model), eot, mode, limit).completion_tokens
 
     def _check_output_affordable(
         self,
