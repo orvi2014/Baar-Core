@@ -610,6 +610,20 @@ except BudgetExhausted as e:
 - Policy: `Rule(when={"utilization": ">= 0.8", "plan": "free"}, then="wrap_up")` makes a call the final one.
 
 
+## Prompt caching
+
+Providers bill a prompt prefix they've seen recently at a discount (OpenAI and DeepSeek automatically, Anthropic with `cache_control`, Gemini implicitly) — in an agent loop that's most of every prompt. Baar reads the cached tokens each call reports (`StepResult.cached_prompt_tokens`), records streams at the cache rate, and reports the hit rate (`log.summary()["cache_hit_rate_pct"]`, and in `print_report()`). Reservations still use the uncached price, so caching never weakens the budget guarantee.
+
+**Does routing still pay when switching models throws the cache away?** `python benchmarks/cache_eval.py` replays 24 conversations × 12 turns with 2k–80k-token contexts, real gpt-5 / gpt-5-mini pricing, and a provider that caches like OpenAI (per model, prefix ≥ 1024 tokens). 30% of turns are hard. Seed 7:
+
+| Setup | Cost | Prompt tokens from cache | Model switches |
+|---|---|---|---|
+| always gpt-5 | $3.1976 | 91.1% | 0 |
+| Baar routing | $2.2029 | 82.5% | 110 |
+
+Routing saves 31% even after the cache losses: each model keeps its own cache, and gpt-5-mini is about 5× cheaper on every line (input, cached input and output). We also tried "sticky" routing — keeping an easy turn on gpt-5 whenever its cached prefix made *that turn* cheaper — and it cost more overall ($2.34): rebuilding the small model's cache once pays for itself within a turn or two, which a per-turn rule can't see. So Baar doesn't offer it.
+
+
 ## Security
 
 Baar-Core maps to [OWASP LLM10:2025 — Unbounded Consumption](https://owasp.org/www-project-top-10-for-llm-applications-2/). The pre-flight kill-switch is a direct mitigation for Denial-of-Wallet attacks: even if an adversary crafts a prompt designed to trigger expensive model calls, the local budget cap catches it before any provider request is made.
