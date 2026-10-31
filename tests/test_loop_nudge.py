@@ -194,6 +194,23 @@ class TestParity:
         with pytest.raises(LoopDetected):
             d.before("search", '{"q":"x","n":1}')
 
+    def test_non_json_string_arguments_compare_as_strings(self):
+        d = LoopDetector()
+        run(d, "shell", "ls -la", result="same")
+        run(d, "shell", "ls  -la", result="same")  # whitespace is normalized
+        with pytest.raises(LoopDetected):
+            d.before("shell", "ls -la")
+        d.before("shell", "ls -l")  # a different command is fine
+
+    def test_peek_ignores_exempt_tools(self):
+        d = LoopDetector(exempt_tools=["poll"])
+        assert d.peek("poll", {}) is None
+
+    def test_result_that_cannot_be_serialized_is_not_in_progress(self):
+        circular = {}
+        circular["self"] = circular
+        assert LoopDetector()._is_in_progress(circular) is False
+
     def test_peek_reports_without_raising_or_firing(self):
         seen = []
         d = LoopDetector(on_loop=seen.append)
