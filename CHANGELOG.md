@@ -5,6 +5,14 @@ All notable changes to baar-core are documented here.
 ## [Unreleased]
 
 ### Added
+- **`overrun_risk`** (default 0) — in `"preflight"`, reserve the split-conformal
+  (1 − risk) quantile of the output lengths each model actually produced, instead of its
+  full max output. `max_tokens` is unchanged, so responses are never cut off; at most about
+  `overrun_risk` of calls can run past the reservation. Until a model has 20 completed
+  calls (`OutputLengths(min_samples=20)`), the worst case is reserved. Lengths are learned
+  per model from completed calls (streams stopped early don't count) in a 500-call window;
+  `BAARRouter(output_lengths=OutputLengths())` shares them between routers, and
+  `router.output_lengths` exposes them.
 - **`thinking_budget`** (router and per call, default off, minimum 1024) — caps a reasoning
   model's hidden thinking without cutting the visible answer. On token-budget providers
   (Claude, Gemini, DeepSeek) Baar sends `thinking={"type": "enabled", "budget_tokens": N}`
