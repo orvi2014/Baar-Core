@@ -5,6 +5,14 @@ All notable changes to baar-core are documented here.
 ## [Unreleased]
 
 ### Added
+- **Loop-detection parity check** — `tests/fixtures/loop_parity.json` holds shared scenarios
+  (which steps warn, whether the next call is refused and as which pattern) that baar-core
+  and noburn's SDK must agree on. `scripts/check_loop_parity.py --other <loop.py>` compares
+  the two (noburn SDK 0.6.1: all 15 match; 0.5.0: 11 mismatches); `tests/test_loop_parity.py`
+  checks baar-core's half in CI.
+- A warning, once per model, when `preflight`, `truncate` or `continue` runs on a model with no
+  LiteLLM pricing: its calls are reserved at a placeholder cost, so the budget can't be
+  enforced for it.
 - **Prompt-cache accounting** — `StepResult.cached_prompt_tokens` (read from OpenAI's
   `prompt_tokens_details.cached_tokens` or Anthropic's `cache_read_input_tokens`);
   `RoutingLog.summary()` adds `cached_prompt_tokens` and `cache_hit_rate_pct`, shown in
@@ -57,6 +65,10 @@ All notable changes to baar-core are documented here.
   (advisory; the reservation is unchanged). Other models ignore it.
 
 ### Fixed
+- **Losing the budget to a concurrent call raised a raw `BudgetExceeded`.** When another call
+  reserved the remaining budget between a call's checks and its reservation, that call now
+  raises `BudgetExhausted` like every other kill-switch refusal (no network call is made; the
+  original `BudgetExceeded` is chained as the cause).
 - **Streams ignored the prompt-cache discount.** `stream_chat` / `astream_chat` recorded
   every prompt token at the full input price; cached tokens are now recorded at the
   cache-read rate (non-streamed calls already were, via LiteLLM's `completion_cost`).

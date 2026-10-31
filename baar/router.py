@@ -477,6 +477,7 @@ class BAARRouter:
             config.output_lengths if config.output_lengths is not None else OutputLengths()
         )
         self._no_stream_usage_warned: set = set()
+        self._unpriced_warned: set = set()
         self._domain_model_overrides = config.domain_model_overrides or {}
         for _domain, _override in self._domain_model_overrides.items():
             if isinstance(_override, tuple):
@@ -794,7 +795,7 @@ class BAARRouter:
         plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
         reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
         with self._sync_budget_lock:
-            self._tracker.check_and_reserve(reserved)
+            self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1020,7 +1021,7 @@ class BAARRouter:
         plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
         reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
         with self._sync_budget_lock:
-            self._tracker.check_and_reserve(reserved)
+            self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1325,7 +1326,7 @@ class BAARRouter:
         async with self._budget_async_lock:
             plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
             reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
-            self._tracker.check_and_reserve(reserved)
+            self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1554,7 +1555,7 @@ class BAARRouter:
         async with self._budget_async_lock:
             plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
             reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
-            self._tracker.check_and_reserve(reserved)
+            self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -2175,6 +2176,32 @@ class BAARRouter:
         _validate_thinking_budget(thinking)
         return mode, limit, thinking
 
+    def _reserve(self, amount: float) -> None:
+        """Reserve ``amount``; losing it to a concurrent call is a kill-switch refusal like any other."""
+        try:
+            self._tracker.check_and_reserve(amount)
+        except BudgetExceeded as e:
+            raise BudgetExhausted(
+                "Kill-switch activated: a concurrent call reserved the remaining budget first "
+                f"(${self.remaining:.6f} left). Request rejected locally with zero network calls.",
+                remaining=self.remaining,
+            ) from e
+
+    def _warn_if_unpriced(self, model: str, mode: str) -> None:
+        """preflight / truncate / continue can't bound spend on a model LiteLLM has no prices for."""
+        if mode == "estimate" or model in self._unpriced_warned:
+            return
+        if self._tracker.output_price_per_token(model) is not None:
+            return
+        self._unpriced_warned.add(model)
+        warnings.warn(
+            f"on_output_overrun='{mode}' can't enforce the budget for '{model}': LiteLLM has no pricing "
+            "for it, so its calls are reserved at a placeholder cost. Register real prices with "
+            "litellm.register_model() to make the guarantee hold.",
+            UserWarning,
+            stacklevel=4,
+        )
+
     def _plan_output(
         self,
         model: str,
@@ -2185,6 +2212,7 @@ class BAARRouter:
         thinking: Optional[int] = None,
         remaining: Optional[float] = None,
     ) -> caps.OutputPlan:
+        self._warn_if_unpriced(model, mode)
         return caps.plan_output(
             mode,
             model=model,
