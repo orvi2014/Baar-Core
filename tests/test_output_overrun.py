@@ -901,22 +901,500 @@ class TestIntegrationLimitsFollowUp:
         assert m.call_args.kwargs["max_output_tokens"] == 300
 
 
-# ── Review fix #8: value gate uses the planned output cost ────────────────────
+# ── Review fix #6 (round 2): value is compared with the expected cost ─────────
 
-class TestValueGateUsesPlan:
-    def test_value_gate_estimate_matches_preflight_reservation(self, priced):
+class TestValueGateUsesExpectedCost:
+    def _eot(self, router):
+        return router._router.decide(task="hello", budget_utilization=0.0).estimated_output_tokens
+
+    def test_value_gate_estimate_is_the_expected_cost(self, priced):
         router = make_router(budget=1.0, on_output_overrun="preflight", value_fn=lambda t: 0.5)
+        eot = self._eot(router)
         with patch("baar.router.litellm.completion", side_effect=completion_echo()):
             router.chat("hello")
         decision = router.log.steps[-1].decision
-        assert decision.estimated_cost_usd == pytest.approx(cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"]))
+        assert decision.estimated_cost_usd == pytest.approx(cost("gpt-4o-mini", eot))
 
-    def test_value_gate_rejects_when_worst_case_exceeds_value(self, priced):
-        from baar import TaskRejected
-        # Worth more than the expected cost, but less than the worst-case reservation.
-        worst = cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"])
-        router = make_router(budget=1.0, on_output_overrun="preflight", value_fn=lambda t: worst / 10)
+    def test_cheap_task_is_not_rejected_because_preflight_is_on(self, priced):
+        router = make_router(budget=1.0, on_output_overrun="preflight")
+        eot = self._eot(router)
+        expected, worst = cost("gpt-4o-mini", eot), cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"])
+        value = (expected + worst) / 2  # worth more than expected, less than worst case
+        router = make_router(budget=1.0, on_output_overrun="preflight", value_fn=lambda t: value)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()) as m:
+            router.chat("hello")
+        assert m.call_count == 1
+
+    def test_expected_cost_respects_user_limit(self, priced):
+        router = make_router(budget=1.0, value_fn=lambda t: 0.5, max_output_tokens=10)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()):
+            router.chat("hello")
+        assert router.log.steps[-1].decision.estimated_cost_usd == pytest.approx(cost("gpt-4o-mini", 10))
+
+
+# ── Round 2 #1: a stream with no usage is not recorded as 0 tokens ────────────
+
+class TestZeroUsageIsNoUsage:
+    def test_zero_pair_is_not_usage(self):
+        from baar.router import _reported_usage
+        chunk = SimpleNamespace(choices=[], _hidden_params={"usage": SimpleNamespace(prompt_tokens=0, completion_tokens=0)})
+        assert _reported_usage(chunk) is None
+
+    def test_real_litellm_stream_without_usage_falls_back_and_warns(self, priced):
+        import litellm as _litellm
+        real = _litellm.completion
+
+        def _call(**kwargs):
+            return real(**kwargs, mock_response="one two three four five")
+
+        router = make_router(budget=1.0)
+        with patch("baar.core.caps.supports_stream_usage", return_value=False), \
+             patch("baar.router.litellm.completion", side_effect=_call), \
+             pytest.warns(UserWarning, match="usage"):
+            assert "".join(router.stream_chat("hello")) == "one two three four five"
+        step = router.log.steps[-1]
+        assert step.completion_tokens == PROMPT_TOKENS  # patched token_counter, not 0
+        assert router.spent > cost("gpt-4o-mini", 0)
+
+    def test_real_litellm_stream_with_include_usage_records_it(self, priced):
+        import litellm as _litellm
+        real = _litellm.completion
+
+        def _call(**kwargs):
+            return real(**kwargs, mock_response="one two three four five")
+
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.completion", side_effect=_call):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
+                list(router.stream_chat("hello"))
+        assert router.log.steps[-1].completion_tokens == 5
+
+    def test_zero_completion_with_text_is_not_trusted(self, priced):
+        chunks = make_chunks(["visible answer"])
+        chunks[-1].usage = SimpleNamespace(prompt_tokens=100, completion_tokens=0)
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.completion", return_value=iter(chunks)), \
+             pytest.warns(UserWarning, match="usage"):
+            list(router.stream_chat("hello"))
+        assert router.log.steps[-1].completion_tokens == PROMPT_TOKENS
+
+
+# ── Round 2 #2: stopping a stream early closes it and stays safe ──────────────
+
+class _Upstream:
+    """A provider stream that records whether it was closed."""
+
+    def __init__(self, chunks):
+        self._it = iter(chunks)
+        self.closed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self._it)
+
+    def close(self):
+        self.closed = True
+
+
+class _AsyncUpstream:
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+        self.closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._chunks:
+            raise StopAsyncIteration
+        return self._chunks.pop(0)
+
+    async def aclose(self):
+        self.closed = True
+
+
+class TestEarlyStreamExit:
+    def _chunks(self):
+        return make_chunks(["a", "b", "c", "d"], usage=(100, 9000))
+
+    def test_sync_early_exit_closes_upstream(self, priced):
+        upstream = _Upstream(self._chunks())
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.completion", return_value=upstream):
+            gen = router.stream_chat("hello")
+            assert next(gen) == "a"
+            gen.close()
+        assert upstream.closed is True
+
+    def test_preflight_early_exit_records_the_reservation(self, priced):
+        upstream = _Upstream(self._chunks())
+        router = make_router(budget=1.0, on_output_overrun="preflight")
+        with patch("baar.router.litellm.completion", return_value=upstream):
+            gen = router.stream_chat("hello")
+            next(gen)
+            gen.close()
+        step = router.log.steps[-1]
+        assert step.completion_tokens == MAX_OUT["gpt-4o-mini"]
+        assert router.spent == pytest.approx(cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"]))
+
+    def test_truncate_early_exit_records_the_reservation(self, priced):
+        upstream = _Upstream(self._chunks())
+        router = make_router(budget=0.002, on_output_overrun="truncate")
+        with patch("baar.router.litellm.completion", return_value=upstream) as m:
+            gen = router.stream_chat("hello")
+            next(gen)
+            gen.close()
+        sent = m.call_args.kwargs["max_tokens"]
+        assert router.log.steps[-1].completion_tokens == sent
+        assert router.spent <= 0.002
+
+    def test_estimate_early_exit_records_visible_text(self, priced):
+        upstream = _Upstream(self._chunks())
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.completion", return_value=upstream):
+            gen = router.stream_chat("hello")
+            next(gen)
+            gen.close()
+        assert router.log.steps[-1].completion_tokens == PROMPT_TOKENS  # token_counter fallback
+
+    def test_full_stream_does_not_use_the_early_exit_path(self, priced):
+        upstream = _Upstream(self._chunks())
+        router = make_router(budget=1.0, on_output_overrun="preflight")
+        with patch("baar.router.litellm.completion", return_value=upstream):
+            assert "".join(router.stream_chat("hello")) == "abcd"
+        assert router.log.steps[-1].completion_tokens == 9000  # provider usage
+
+    @pytest.mark.asyncio
+    async def test_async_early_exit_closes_upstream_and_records_reservation(self, priced):
+        upstream = _AsyncUpstream(self._chunks())
+        router = make_router(budget=1.0, on_output_overrun="preflight")
+        with patch("baar.router.litellm.acompletion", new_callable=AsyncMock, return_value=upstream):
+            gen = router.astream_chat("hello")
+            assert await gen.__anext__() == "a"
+            await gen.aclose()
+        assert upstream.closed is True
+        assert router.log.steps[-1].completion_tokens == MAX_OUT["gpt-4o-mini"]
+
+
+# ── Round 2 #3: a user limit can't exceed the model's real max output ─────────
+
+class TestUserLimitClamped:
+    def test_preflight_clamps_to_model_max(self, priced):
+        p = _plan("preflight", max_output_tokens=1_000_000)
+        assert p.max_tokens == MAX_OUT["gpt-4o-mini"]
+
+    def test_truncate_clamps_to_model_max(self, priced):
+        p = _plan("truncate", remaining=100.0, max_output_tokens=1_000_000)
+        assert p.max_tokens == MAX_OUT["gpt-4o-mini"]
+
+    def test_estimate_clamps_sent_limit_to_model_max(self, priced):
+        p = _plan("estimate", max_output_tokens=1_000_000)
+        assert p.max_tokens == MAX_OUT["gpt-4o-mini"]
+
+    def test_unknown_model_max_keeps_user_limit(self, priced):
+        with patch("baar.core.caps.model_context_window", return_value=None):
+            p = _plan("preflight", model="mystery", max_output_tokens=5000)
+        assert p.max_tokens == 5000
+
+    def test_router_sends_clamped_limit(self, priced):
+        router = make_router(budget=1.0, on_output_overrun="preflight", max_output_tokens=1_000_000)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()) as m:
+            router.chat("hello")
+        assert m.call_args.kwargs["max_tokens"] == MAX_OUT["gpt-4o-mini"]
+
+
+# ── Round 2 #4: a safety margin on prompt tokens in preflight/truncate ────────
+
+def completion_with_prompt(real_prompt_tokens, finish_reason="length"):
+    """side_effect: the provider counts more prompt tokens than Baar estimated."""
+    def _call(**kwargs):
+        resp = make_response(model=kwargs["model"], completion_tokens=kwargs.get("max_tokens", 30),
+                             finish_reason=finish_reason)
+        resp.usage.prompt_tokens = real_prompt_tokens
+        return resp
+    return _call
+
+
+class TestPromptMargin:
+    def test_default_margin(self):
+        assert make_router().config.prompt_margin == 0.2
+
+    def test_negative_margin_rejected(self):
+        with pytest.raises(ValueError, match="prompt_margin"):
+            make_router(prompt_margin=-0.1)
+
+    def test_plan_prices_prompt_with_margin(self, priced):
+        p = _plan("preflight", prompt_margin=0.2)
+        assert p.prompt_tokens == math.ceil(PROMPT_TOKENS * 1.2)
+
+    def test_estimate_mode_has_no_margin(self, priced):
+        p = _plan("estimate", prompt_margin=0.2)
+        assert p.prompt_tokens == PROMPT_TOKENS
+
+    def test_context_room_uses_the_raw_prompt(self, priced):
+        p = plan_output("preflight", model="gpt-4o", prompt_tokens=120000, expected_output_tokens=500,
+                        remaining=10.0, tracker=BudgetTracker(total_budget=10.0), prompt_margin=0.2)
+        assert p.max_tokens == 8000
+
+    def test_preflight_blocks_when_only_the_margin_doesnt_fit(self, priced):
+        budget = cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"]) + 1e-9  # fits with the raw prompt only
+        router = make_router(budget=budget, on_output_overrun="preflight", min_cost_threshold=0.0)
         with patch("baar.router.litellm.completion") as m:
-            with pytest.raises(TaskRejected):
+            with pytest.raises(BudgetExhausted):
                 router.chat("hello")
             m.assert_not_called()
+        relaxed = make_router(budget=budget, on_output_overrun="preflight", min_cost_threshold=0.0,
+                              prompt_margin=0.0)
+        with patch("baar.router.litellm.completion", side_effect=completion_echo()) as m:
+            relaxed.chat("hello")
+        assert m.call_count == 1
+
+    def test_truncate_prompt_undercount_does_not_overshoot(self, priced):
+        router = make_router(budget=0.002, on_output_overrun="truncate")
+        with patch("baar.router.litellm.completion", side_effect=completion_with_prompt(115)):
+            router.chat("hello")
+        assert router.spent <= 0.002
+
+    def test_preflight_prompt_undercount_does_not_overshoot(self, priced):
+        budget = cost("gpt-4o-mini", MAX_OUT["gpt-4o-mini"], prompt_tokens=120) + 1e-9
+        router = make_router(budget=budget, on_output_overrun="preflight", min_cost_threshold=0.0)
+        with patch("baar.router.litellm.completion", side_effect=completion_with_prompt(115)):
+            router.chat("hello")
+        assert router.spent <= budget
+
+
+# ── Round 2 #5: Vercel proxy reports cut-offs and maps limit errors ───────────
+
+class TestVercelFinishAndErrors:
+    def _client(self, router):
+        pytest.importorskip("fastapi", reason="fastapi not installed")
+        from fastapi.testclient import TestClient
+        from baar.integrations.vercel import create_app
+        return TestClient(create_app(router), raise_server_exceptions=False)
+
+    def _post(self, client, **extra):
+        return client.post("/v1/chat/completions", json={
+            "model": "baar", "messages": [{"role": "user", "content": "Say hello"}], **extra,
+        })
+
+    def test_step_records_finish_reason(self, priced):
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.completion",
+                   side_effect=completion_echo(finish_reason="length")):
+            router.chat("hello")
+        assert router.log.steps[-1].finish_reason == "length"
+
+    def test_non_stream_reports_length(self, priced):
+        router = make_router(budget=1.0)
+        client = self._client(router)
+        with patch("baar.router.litellm.acompletion", new_callable=AsyncMock,
+                   return_value=make_response(finish_reason="length")):
+            resp = self._post(client, max_tokens=50)
+        assert resp.status_code == 200
+        assert resp.json()["choices"][0]["finish_reason"] == "length"
+
+    def test_non_stream_defaults_to_stop(self, priced):
+        router = make_router(budget=1.0)
+        client = self._client(router)
+        with patch("baar.router.litellm.acompletion", new_callable=AsyncMock,
+                   return_value=make_response(finish_reason="stop")):
+            resp = self._post(client)
+        assert resp.json()["choices"][0]["finish_reason"] == "stop"
+
+    def test_stream_reports_length(self, priced):
+        router = make_router(budget=1.0)
+        client = self._client(router)
+
+        async def _agen():
+            for c in make_chunks(["a"], finish_reason="length", usage=(100, 30)):
+                yield c
+
+        with patch("baar.router.litellm.acompletion", new_callable=AsyncMock, return_value=_agen()):
+            resp = self._post(client, stream=True, max_tokens=50)
+        assert '"finish_reason": "length"' in resp.text
+
+    def test_output_limit_unavailable_is_400(self):
+        router = make_router(budget=1.0)
+        client = self._client(router)
+        with patch.object(router, "achat", new_callable=AsyncMock,
+                          side_effect=OutputLimitUnavailable("no output limit for 'x'")):
+            resp = self._post(client)
+        assert resp.status_code == 400
+        assert "invalid_request_error" in resp.text
+
+    def test_stream_output_limit_unavailable_sends_error_chunk(self):
+        router = make_router(budget=1.0)
+        client = self._client(router)
+
+        async def _boom(*a, **k):
+            raise OutputLimitUnavailable("no output limit for 'x'")
+            yield  # pragma: no cover
+
+        with patch.object(router, "astream_chat", _boom):
+            resp = self._post(client, stream=True)
+        assert "invalid_request_error" in resp.text
+        assert "[DONE]" in resp.text
+
+    def test_stream_budget_exceeded_sends_budget_error_chunk(self):
+        router = make_router(budget=1.0)
+        client = self._client(router)
+
+        async def _boom(*a, **k):
+            raise BudgetExceeded(requested=1.0, remaining=0.1, model="(reservation)")
+            yield  # pragma: no cover
+
+        with patch.object(router, "astream_chat", _boom):
+            resp = self._post(client, stream=True)
+        assert "budget_exhausted" in resp.text
+
+
+# ── Every call path: fallback skips, kill-switch, stream close errors ─────────
+
+import asyncio
+
+PATHS = ["chat", "stream_chat", "achat", "astream_chat"]
+
+
+def call_path(router, path, task="hello", **kw):
+    """Run one of the four entry points to completion and return the text."""
+    if path == "chat":
+        return router.chat(task, **kw)
+    if path == "stream_chat":
+        return "".join(router.stream_chat(task, **kw))
+    if path == "achat":
+        return asyncio.run(router.achat(task, **kw))
+
+    async def _collect():
+        return "".join([t async for t in router.astream_chat(task, **kw)])
+    return asyncio.run(_collect())
+
+
+def provider(fail_models=(), calls=None):
+    """Patches for both litellm entry points: fail some models, otherwise answer (streamed or not)."""
+    def _resp(kwargs):
+        if kwargs["model"] in fail_models:
+            raise ConnectionError(f"{kwargs['model']} down")
+        if calls is not None:
+            calls.append(kwargs["model"])
+        if kwargs.get("stream"):
+            return iter(make_chunks(["ok"], usage=(100, 30)))
+        return make_response(model=kwargs["model"])
+
+    async def _aresp(**kwargs):
+        r = _resp(kwargs)
+        if kwargs.get("stream"):
+            chunks = list(r)
+
+            async def _agen():
+                for c in chunks:
+                    yield c
+            return _agen()
+        return r
+
+    return (patch("baar.router.litellm.completion", side_effect=lambda **kw: _resp(kw)),
+            patch("baar.router.litellm.acompletion", side_effect=_aresp))
+
+
+class TestAllPaths:
+    @pytest.mark.parametrize("path", PATHS)
+    def test_unaffordable_fallback_skipped(self, priced, path):
+        router = make_router(budget=0.05, on_output_overrun="preflight", small_fallback_models=["gpt-4o"])
+        calls = []
+        p1, p2 = provider(fail_models={"gpt-4o-mini"}, calls=calls)
+        with p1, p2, pytest.raises(RuntimeError, match="unaffordable"):
+            call_path(router, path)
+        assert calls == []
+        assert router.spent == pytest.approx(0.0)
+
+    @pytest.mark.parametrize("path", PATHS)
+    def test_fallback_without_output_limit_skipped(self, priced, path):
+        router = make_router(budget=1.0, on_output_overrun="preflight", small_fallback_models=["mystery-fb"])
+        calls = []
+        p1, p2 = provider(fail_models={"gpt-4o-mini"}, calls=calls)
+        with p1, p2, pytest.raises(RuntimeError, match=r"mystery-fb: skipped \("):
+            call_path(router, path)
+        assert calls == []
+
+    @pytest.mark.parametrize("path", PATHS)
+    def test_truncate_below_min_useful_blocks_locally(self, priced, path):
+        router = make_router(budget=0.0005, on_output_overrun="truncate",
+                             min_useful_tokens=1000, min_cost_threshold=0.0)
+        calls = []
+        p1, p2 = provider(calls=calls)
+        with p1, p2, pytest.raises(BudgetExhausted, match="useful response"):
+            call_path(router, path)
+        assert calls == []
+
+    @pytest.mark.parametrize("path", PATHS)
+    def test_invalid_per_call_limit_rejected(self, priced, path):
+        router = make_router(budget=1.0)
+        calls = []
+        p1, p2 = provider(calls=calls)
+        with p1, p2, pytest.raises(ValueError, match="max_output_tokens"):
+            call_path(router, path, max_output_tokens=0)
+        assert calls == []
+
+    @pytest.mark.parametrize("path", PATHS)
+    def test_fallback_answers_when_affordable(self, priced, path):
+        router = make_router(budget=1.0, small_fallback_models=["gpt-4o"])
+        calls = []
+        p1, p2 = provider(fail_models={"gpt-4o-mini"}, calls=calls)
+        with p1, p2:
+            assert call_path(router, path) == "ok"
+        assert calls == ["gpt-4o"]
+        assert router.log.steps[-1].model_used == "gpt-4o"
+
+
+class TestStreamCloseEdgeCases:
+    def test_close_stream_ignores_streams_without_close(self):
+        from baar.router import _close_stream
+        _close_stream(iter([]))  # list iterators have no close(): nothing to do
+
+    def test_close_stream_swallows_errors(self):
+        from baar.router import _close_stream
+
+        class Boom:
+            def close(self):
+                raise RuntimeError("already closed")
+        _close_stream(Boom())
+
+    @pytest.mark.asyncio
+    async def test_async_aclose_error_is_swallowed(self, priced):
+        class Upstream(_AsyncUpstream):
+            async def aclose(self):
+                raise RuntimeError("connection reset")
+
+        router = make_router(budget=1.0, on_output_overrun="preflight")
+        with patch("baar.router.litellm.acompletion", new_callable=AsyncMock,
+                   return_value=Upstream(make_chunks(["a", "b"], usage=(100, 30)))):
+            gen = router.astream_chat("hello")
+            await gen.__anext__()
+            await gen.aclose()
+        assert router.log.steps[-1].completion_tokens == MAX_OUT["gpt-4o-mini"]
+
+    def test_no_usage_warning_fires_once_per_model(self, priced):
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.completion", side_effect=lambda **kw: iter(make_chunks(["a"]))):
+            with pytest.warns(UserWarning, match="usage"):
+                list(router.stream_chat("hello"))
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
+                list(router.stream_chat("hello"))
+
+    @pytest.mark.asyncio
+    async def test_async_zero_completion_with_text_is_not_trusted(self, priced):
+        chunks = make_chunks(["visible answer"])
+        chunks[-1].usage = SimpleNamespace(prompt_tokens=100, completion_tokens=0)
+
+        async def _agen():
+            for c in chunks:
+                yield c
+
+        router = make_router(budget=1.0)
+        with patch("baar.router.litellm.acompletion", new_callable=AsyncMock, return_value=_agen()), \
+             pytest.warns(UserWarning, match="usage"):
+            [t async for t in router.astream_chat("hello")]
+        assert router.log.steps[-1].completion_tokens == PROMPT_TOKENS

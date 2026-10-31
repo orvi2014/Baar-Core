@@ -190,8 +190,26 @@ def _reported_usage(chunk) -> Optional[tuple]:
         prompt_tokens = getattr(usage, "prompt_tokens", None)
         completion_tokens = getattr(usage, "completion_tokens", None)
         if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+            # LiteLLM attaches (0, 0) to the last chunk when the provider sent no usage.
+            if prompt_tokens == 0 and completion_tokens == 0:
+                continue
             return prompt_tokens, completion_tokens
     return None
+
+
+def _close_stream(stream) -> None:
+    """Close a provider stream the caller stopped reading, so the request ends."""
+    close = getattr(stream, "close", None)
+    if close is None:
+        return
+    try:
+        close()
+    except Exception:
+        pass
+
+
+def _finish_reason(value) -> Optional[str]:
+    return value if isinstance(value, str) else None
 
 
 # ── BAARConfig ─────────────────────────────────────────────────────────────────
@@ -237,6 +255,7 @@ class BAARConfig:
     max_output_tokens: Optional[int] = None
     min_useful_tokens: int = 64  # "truncate" blocks locally below this many affordable tokens
     max_call_share: float = 1.0  # "truncate": largest share of the remaining budget one call may reserve
+    prompt_margin: float = 0.2  # "preflight"/"truncate": extra share of the prompt estimate priced in
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -318,6 +337,7 @@ class BAARRouter:
         max_output_tokens: Optional[int] = None,
         min_useful_tokens: int = 64,
         max_call_share: float = 1.0,
+        prompt_margin: float = 0.2,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -356,6 +376,7 @@ class BAARRouter:
             max_output_tokens=max_output_tokens,
             min_useful_tokens=min_useful_tokens,
             max_call_share=max_call_share,
+            prompt_margin=prompt_margin,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -373,6 +394,8 @@ class BAARRouter:
             raise ValueError("min_useful_tokens must be a positive integer")
         if not 0 < config.max_call_share <= 1:
             raise ValueError("max_call_share must be in (0, 1]")
+        if config.prompt_margin < 0:
+            raise ValueError("prompt_margin must be non-negative")
 
         self.small_model = config.small_model
         self.big_model = config.big_model
@@ -383,6 +406,7 @@ class BAARRouter:
         self._max_output_tokens = config.max_output_tokens
         self._min_useful_tokens = int(config.min_useful_tokens)
         self._max_call_share = float(config.max_call_share)
+        self._prompt_margin = float(config.prompt_margin)
         self._no_stream_usage_warned: set = set()
         self._domain_model_overrides = config.domain_model_overrides or {}
         for _domain, _override in self._domain_model_overrides.items():
@@ -580,7 +604,7 @@ class BAARRouter:
                 remaining=self.remaining,
             ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -597,7 +621,7 @@ class BAARRouter:
         # ── 1. Cheapest-call affordability check ──────────────────────────────
         try:
             self._tracker.check_affordability(
-                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+                self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
             )
         except BudgetExceeded as e:
             raise BudgetExhausted(
@@ -653,7 +677,9 @@ class BAARRouter:
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
 
         # ── 3b. Value gate ────────────────────────────────────────────────────
-        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
+        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, 
+            self._expected_tokens(tc, eot, limit), self._affordability_check(tc, eot, mode, limit),
+        )
 
         # ── 4. Execution with concurrency-safe budget reservation ─────────────
         # Initialise locals before reservation so a KeyboardInterrupt in the
@@ -664,7 +690,7 @@ class BAARRouter:
         attempted_models: List[str] = []
         failover_errors: List[str] = []
         plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
-        reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
+        reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
         with self._sync_budget_lock:
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
@@ -731,6 +757,7 @@ class BAARRouter:
             failover_count=max(0, len(attempted_models) - 1),
             failover_errors=failover_errors,
             truncated_by_budget=plan.budget_limited and response.choices[0].finish_reason == "length",
+            finish_reason=_finish_reason(response.choices[0].finish_reason),
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
@@ -777,7 +804,7 @@ class BAARRouter:
                 remaining=self.remaining,
             ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -793,7 +820,7 @@ class BAARRouter:
 
         try:
             self._tracker.check_affordability(
-                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+                self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
             )
         except BudgetExceeded as e:
             raise BudgetExhausted(
@@ -844,7 +871,9 @@ class BAARRouter:
 
         model_to_use = decision.model
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
-        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
+        decision, model_to_use = self._apply_value_gate(task, decision, model_to_use, tc, 
+            self._expected_tokens(tc, eot, limit), self._affordability_check(tc, eot, mode, limit),
+        )
 
         # ── 2. Reserve budget atomically, then find a working stream ──────────
         # Locals are initialised before reservation so a KeyboardInterrupt in
@@ -854,7 +883,7 @@ class BAARRouter:
         response_stream = None
         model_to_use_final = model_to_use
         plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
-        reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
+        reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
         with self._sync_budget_lock:
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
@@ -904,6 +933,7 @@ class BAARRouter:
         prompt_tokens_for_record = 0  # set inside try; default protects finally if interrupted early
         finish_reason: Optional[str] = None
         usage: Optional[tuple] = None
+        completed = False
 
         try:
             if model_to_use_final != decision.model:
@@ -921,9 +951,14 @@ class BAARRouter:
                 finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
                 parts.append(delta)
                 yield delta
+            completed = True
         finally:
+            if not completed:
+                _close_stream(response_stream)  # stop the provider generating (and billing)
             full_text = "".join(parts)
             latency_ms = (time.perf_counter() - start_time) * 1000
+            if usage is not None and usage[1] == 0 and full_text:
+                usage = None  # 0 completion tokens with text produced isn't real usage
             if usage is not None:
                 # Provider-reported usage includes hidden reasoning tokens.
                 reported_prompt, completion_tokens = usage
@@ -932,7 +967,12 @@ class BAARRouter:
                     prompt_tokens_for_record = reported_prompt
             else:
                 completion_tokens = token_counter(full_text, model=model_to_use_final)
-                self._warn_no_stream_usage(model_to_use_final)
+                if completed:
+                    self._warn_no_stream_usage(model_to_use_final)
+                elif mode != "estimate":
+                    # Stopped early: the provider may have generated (and billed) more
+                    # than the visible text, so record what was reserved for it.
+                    completion_tokens = max(completion_tokens, plan.completion_tokens)
             try:
                 # Record actual cost BEFORE cancelling the reservation so that
                 # concurrent threads never see a transient under-count window
@@ -954,6 +994,7 @@ class BAARRouter:
                     failover_count=max(0, len(attempted_models) - 1),
                     failover_errors=failover_errors,
                     truncated_by_budget=plan.budget_limited and finish_reason == "length",
+                    finish_reason=_finish_reason(finish_reason),
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
@@ -1029,7 +1070,7 @@ class BAARRouter:
                 remaining=self.remaining,
             ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -1046,7 +1087,7 @@ class BAARRouter:
         # ── 1. Cheapest-call affordability check ──────────────────────────────
         try:
             self._tracker.check_affordability(
-                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+                self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
             )
         except BudgetExceeded as e:
             raise BudgetExhausted(
@@ -1101,7 +1142,9 @@ class BAARRouter:
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
 
         # ── 3b. Value gate (same logic as chat(), fully ported) ───────────────
-        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
+        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, 
+            self._expected_tokens(tc, eot, limit), self._affordability_check(tc, eot, mode, limit),
+        )
 
         # ── 4. Execution with concurrency-safe budget reservation ─────────────
         start_time = time.perf_counter()
@@ -1112,7 +1155,7 @@ class BAARRouter:
         # Atomically check + reserve to prevent concurrent overspend.
         async with self._budget_async_lock:
             plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
-            reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
+            reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
@@ -1180,6 +1223,7 @@ class BAARRouter:
             failover_count=max(0, len(attempted_models) - 1),
             failover_errors=failover_errors,
             truncated_by_budget=plan.budget_limited and response.choices[0].finish_reason == "length",
+            finish_reason=_finish_reason(response.choices[0].finish_reason),
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
@@ -1223,7 +1267,7 @@ class BAARRouter:
                 remaining=self.remaining,
             ) from e
         estimated_small_floor = self._tracker.estimate_cost(
-            self.small_model, prompt_tokens_est, small_plan.completion_tokens
+            self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
         )
         effective_min_cost_threshold = max(self._min_cost_threshold, estimated_small_floor)
 
@@ -1239,7 +1283,7 @@ class BAARRouter:
 
         try:
             self._tracker.check_affordability(
-                self.small_model, prompt_tokens_est, small_plan.completion_tokens
+                self.small_model, small_plan.prompt_tokens, small_plan.completion_tokens
             )
         except BudgetExceeded as e:
             raise BudgetExhausted(
@@ -1289,14 +1333,16 @@ class BAARRouter:
 
         model_to_use = decision.model
         self._check_output_affordable(model_to_use, tc(model_to_use), eot, mode, limit)
-        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, self._planned_tokens(tc, eot, mode, limit))
+        decision, model_to_use = await self._aapply_value_gate(task, decision, model_to_use, tc, 
+            self._expected_tokens(tc, eot, limit), self._affordability_check(tc, eot, mode, limit),
+        )
 
         # ── Reserve budget atomically, then find a working stream ─────────────
         # Reservation precedes the API call so concurrent coroutines cannot both
         # pass the affordability check and both open streams (wasted API calls).
         async with self._budget_async_lock:
             plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit)
-            reserved = self._tracker.estimate_cost(model_to_use, tc(model_to_use), plan.completion_tokens)
+            reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
             self._tracker.check_and_reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
@@ -1349,6 +1395,7 @@ class BAARRouter:
         prompt_tokens_for_record = 0  # set inside try; default protects finally if interrupted early
         finish_reason: Optional[str] = None
         usage: Optional[tuple] = None
+        completed = False
 
         try:
             if model_to_use_final != decision.model:
@@ -1366,9 +1413,20 @@ class BAARRouter:
                 finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
                 parts.append(delta)
                 yield delta
+            completed = True
         finally:
+            if not completed:
+                # Stop the provider generating (and billing) after an early exit.
+                aclose = getattr(response_stream, "aclose", None)
+                if aclose is not None:
+                    try:
+                        await aclose()
+                    except Exception:
+                        pass
             full_text = "".join(parts)
             latency_ms = (time.perf_counter() - start_time) * 1000
+            if usage is not None and usage[1] == 0 and full_text:
+                usage = None  # 0 completion tokens with text produced isn't real usage
             if usage is not None:
                 # Provider-reported usage includes hidden reasoning tokens.
                 reported_prompt, completion_tokens = usage
@@ -1377,7 +1435,12 @@ class BAARRouter:
                     prompt_tokens_for_record = reported_prompt
             else:
                 completion_tokens = token_counter(full_text, model=model_to_use_final)
-                self._warn_no_stream_usage(model_to_use_final)
+                if completed:
+                    self._warn_no_stream_usage(model_to_use_final)
+                elif mode != "estimate":
+                    # Stopped early: the provider may have generated (and billed) more
+                    # than the visible text, so record what was reserved for it.
+                    completion_tokens = max(completion_tokens, plan.completion_tokens)
             try:
                 record = self._tracker.record_manual(
                     model_to_use_final, prompt_tokens_for_record, completion_tokens
@@ -1396,6 +1459,7 @@ class BAARRouter:
                     failover_count=max(0, len(attempted_models) - 1),
                     failover_errors=failover_errors,
                     truncated_by_budget=plan.budget_limited and finish_reason == "length",
+                    finish_reason=_finish_reason(finish_reason),
                 )
                 self._log.add(step_result)
                 self._append_telemetry(step_result)
@@ -1521,17 +1585,20 @@ class BAARRouter:
         decision,
         model_to_use: str,
         tc,
-        out_tokens: Callable[[str], int],
+        expected_tokens: Callable[[str], int],
+        afford: Callable[[str], None],
         estimated_value: float,
     ) -> tuple:
         """
         Shared value gate logic called by both sync and async paths.
-        ``out_tokens(model)`` is the completion tokens Baar will reserve for ``model``,
-        so value is compared against the same cost the call is planned for.
+        Value is compared with the *expected* cost (``expected_tokens(model)``):
+        the worst case a mode reserves is for affordability, not for deciding
+        whether a task is worth running. ``afford(model)`` raises BudgetExceeded
+        if a downshifted model can't cover its planned output.
         Returns (decision, model_to_use). Raises TaskRejected if the task is rejected.
         """
         prompt_tokens = tc(model_to_use)
-        estimated_cost = self._tracker.estimate_cost(model_to_use, prompt_tokens, out_tokens(model_to_use))
+        estimated_cost = self._tracker.estimate_cost(model_to_use, prompt_tokens, expected_tokens(model_to_use))
 
         # Warn on early samples if value scale looks wrong for USD.
         if self._value_gate_samples < 5:
@@ -1585,7 +1652,7 @@ class BAARRouter:
                     estimated_cost_usd=round(estimated_cost, 8),
                 )
                 model_to_use = self.small_model
-                self._tracker.check_affordability(model_to_use, tc(model_to_use), out_tokens(model_to_use))
+                afford(model_to_use)
             else:
                 with self._value_gate_lock:
                     self._value_gate_rejects += 1
@@ -1636,7 +1703,7 @@ class BAARRouter:
                     estimated_cost_usd=round(estimated_cost, 8),
                 )
                 model_to_use = self.small_model
-                self._tracker.check_affordability(model_to_use, tc(model_to_use), out_tokens(model_to_use))
+                afford(model_to_use)
 
         return decision, model_to_use
 
@@ -1646,7 +1713,8 @@ class BAARRouter:
         decision,
         model_to_use: str,
         tc,
-        out_tokens: Callable[[str], int],
+        expected_tokens: Callable[[str], int],
+        afford: Callable[[str], None],
     ) -> tuple:
         """
         Apply the value gate if value_fn is configured (sync path).
@@ -1655,7 +1723,7 @@ class BAARRouter:
         if self._value_fn is None:
             return decision, model_to_use
         estimated_value = float(self._value_fn(task))
-        return self._run_value_gate(task, decision, model_to_use, tc, out_tokens, estimated_value)
+        return self._run_value_gate(task, decision, model_to_use, tc, expected_tokens, afford, estimated_value)
 
     async def _aapply_value_gate(
         self,
@@ -1663,7 +1731,8 @@ class BAARRouter:
         decision,
         model_to_use: str,
         tc,
-        out_tokens: Callable[[str], int],
+        expected_tokens: Callable[[str], int],
+        afford: Callable[[str], None],
     ) -> tuple:
         """
         Apply the value gate if value_fn or async_value_fn is configured (async path).
@@ -1676,7 +1745,7 @@ class BAARRouter:
             estimated_value = float(self._value_fn(task))
         else:
             return decision, model_to_use
-        return self._run_value_gate(task, decision, model_to_use, tc, out_tokens, estimated_value)
+        return self._run_value_gate(task, decision, model_to_use, tc, expected_tokens, afford, estimated_value)
 
     def _resolve_output_opts(
         self, on_output_overrun: Optional[str], max_output_tokens: Optional[int]
@@ -1708,11 +1777,16 @@ class BAARRouter:
             max_output_tokens=limit,
             min_useful_tokens=self._min_useful_tokens,
             max_call_share=self._max_call_share,
+            prompt_margin=self._prompt_margin,
         )
 
-    def _planned_tokens(self, tc, eot: int, mode: str, limit: Optional[int]) -> Callable[[str], int]:
-        """model -> completion tokens the call would be planned (and reserved) for."""
-        return lambda model: self._plan_output(model, tc(model), eot, mode, limit).completion_tokens
+    def _expected_tokens(self, tc, eot: int, limit: Optional[int]) -> Callable[[str], int]:
+        """model -> expected completion tokens (the router's estimate, capped by the user's limit)."""
+        return lambda model: self._plan_output(model, tc(model), eot, "estimate", limit).completion_tokens
+
+    def _affordability_check(self, tc, eot: int, mode: str, limit: Optional[int]) -> Callable[[str], None]:
+        """model -> raises BudgetExceeded if ``model`` can't cover its planned output."""
+        return lambda model: self._check_output_affordable(model, tc(model), eot, mode, limit)
 
     def _check_output_affordable(
         self,
@@ -1730,9 +1804,11 @@ class BAARRouter:
         """
         if uncut and mode == "truncate":
             tokens = caps.uncut_output_tokens(model, prompt_tokens, eot, limit)
+            priced = caps.priced_prompt_tokens(mode, prompt_tokens, self._prompt_margin)
         else:
-            tokens = self._plan_output(model, prompt_tokens, eot, mode, limit).completion_tokens
-        self._tracker.check_affordability(model, prompt_tokens, tokens)
+            plan = self._plan_output(model, prompt_tokens, eot, mode, limit)
+            tokens, priced = plan.completion_tokens, plan.prompt_tokens
+        self._tracker.check_affordability(model, priced, tokens)
 
     def _warn_no_stream_usage(self, model: str) -> None:
         if model in self._no_stream_usage_warned:
@@ -1756,7 +1832,7 @@ class BAARRouter:
             candidate, tc(candidate), eot, mode, limit,
             remaining=self._tracker.remaining + reserved,
         )
-        needed = self._tracker.estimate_cost(candidate, tc(candidate), plan.completion_tokens)
+        needed = self._tracker.estimate_cost(candidate, plan.prompt_tokens, plan.completion_tokens)
         if needed > reserved:
             self._tracker.check_and_reserve(needed - reserved)
             reserved = needed

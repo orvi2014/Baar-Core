@@ -69,6 +69,7 @@ except ImportError as exc:  # pragma: no cover
 from baar.router import BAARRouter
 from baar.core.exceptions import BudgetExhausted, TaskRejected
 from baar.core.budget import BudgetExceeded
+from baar.core.caps import OutputLimitUnavailable
 
 
 # ── Request / response models ─────────────────────────────────────────────────
@@ -108,7 +109,8 @@ def _make_chunk(completion_id: str, created: int, model: str, content: str, fini
 
 
 def _make_completion(completion_id: str, created: int, model: str, content: str,
-                     prompt_tokens: int = 0, completion_tokens: int = 0) -> dict:
+                     prompt_tokens: int = 0, completion_tokens: int = 0,
+                     finish_reason: str = "stop") -> dict:
     return {
         "id": completion_id,
         "object": "chat.completion",
@@ -118,7 +120,7 @@ def _make_completion(completion_id: str, created: int, model: str, content: str,
             {
                 "index": 0,
                 "message": {"role": "assistant", "content": content},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
@@ -162,6 +164,10 @@ def _output_limit(req: "ChatRequest") -> Optional[int]:
                 },
             )
     return req.max_completion_tokens if req.max_completion_tokens is not None else req.max_tokens
+
+
+def _invalid_request_error(exc: Exception) -> dict:
+    return {"error": {"message": str(exc), "type": "invalid_request_error", "code": "output_limit_unavailable"}}
 
 
 def _reject_error(exc: TaskRejected) -> HTTPException:
@@ -269,11 +275,14 @@ def create_app(
             raise _budget_error(BudgetExhausted(str(exc), remaining=router.remaining))
         except TaskRejected as exc:
             raise _reject_error(exc)
+        except OutputLimitUnavailable as exc:
+            raise HTTPException(status_code=400, detail=_invalid_request_error(exc))
 
         # Read token counts from the last log step (best-effort under concurrency)
         prompt_tokens, completion_tokens, model_used = _last_step_info(router)
         return _make_completion(
-            completion_id, created, model_used, reply, prompt_tokens, completion_tokens
+            completion_id, created, model_used, reply, prompt_tokens, completion_tokens,
+            finish_reason=_last_finish_reason(router),
         )
 
     return app
@@ -305,8 +314,25 @@ async def _stream_response(
         # After streaming completes, update model name from log
         _, _, model_used = _last_step_info(router)
 
-        # Final chunk — finish_reason=stop
-        yield _make_chunk(completion_id, created, model_used, "", finish_reason="stop")
+        # Final chunk — "length" when the reply was cut off, else "stop"
+        yield _make_chunk(completion_id, created, model_used, "", finish_reason=_last_finish_reason(router))
+        yield "data: [DONE]\n\n"
+
+    except BudgetExceeded as exc:
+        # A concurrent call took the budget between the check and the reservation.
+        error_chunk = json.dumps({
+            "error": {
+                "message": str(exc),
+                "type": "budget_exhausted",
+                "code": "quota_exceeded",
+                "remaining_usd": exc.remaining,
+            }
+        })
+        yield f"data: {error_chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    except OutputLimitUnavailable as exc:
+        yield f"data: {json.dumps(_invalid_request_error(exc))}\n\n"
         yield "data: [DONE]\n\n"
 
     except BudgetExhausted as exc:
@@ -340,6 +366,13 @@ def _last_user_content(messages: List[ChatMessage]) -> str:
         if m.role == "user":
             return m.content
     return messages[-1].content if messages else ""
+
+
+def _last_finish_reason(router: BAARRouter) -> str:
+    """'length' if the last step was cut off (by max_tokens or the budget), else 'stop'."""
+    if router.log.steps and list(router.log.steps)[-1].finish_reason == "length":
+        return "length"
+    return "stop"
 
 
 def _last_step_info(router: BAARRouter):

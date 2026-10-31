@@ -43,10 +43,13 @@ class OutputPlan:
     budget_limited:    True when max_tokens was lowered by the remaining budget
                        (only in "truncate" mode) — a "length" finish then means
                        Baar cut the response off.
+    prompt_tokens:     prompt tokens the input is priced at: the estimate plus
+                       the safety margin in "preflight" / "truncate".
     """
     completion_tokens: int
     max_tokens: Optional[int]
     budget_limited: bool = False
+    prompt_tokens: int = 0
 
 
 def validate_mode(mode: str) -> None:
@@ -85,16 +88,35 @@ def supports_stream_usage(model: str) -> bool:
     return "stream_options" in params
 
 
+def priced_prompt_tokens(mode: str, prompt_tokens: int, prompt_margin: float) -> int:
+    """
+    Prompt tokens to price the input at. Baar's count is an estimate (tiktoken
+    for every provider; images and tool schemas are approximate), so the modes
+    that promise no overshoot add ``prompt_margin`` on top. "estimate" doesn't.
+    """
+    if mode == "estimate" or prompt_margin <= 0:
+        return prompt_tokens
+    return math.ceil(prompt_tokens * (1 + prompt_margin))
+
+
+def _clamped_limit(model: str, max_output_tokens: Optional[int]) -> Optional[int]:
+    """The user's limit, never above the model's real max output; the model max if no user limit."""
+    model_max = model_max_output_tokens(model)
+    if max_output_tokens is None:
+        return model_max
+    return max_output_tokens if model_max is None else min(max_output_tokens, model_max)
+
+
 def output_limit(model: str, prompt_tokens: int, max_output_tokens: Optional[int]) -> Optional[int]:
     """
-    Largest response that can be requested: the user's limit, else the model's
-    max output, further capped by the room left in the context window.
-    None if no limit is known.
+    Largest response that can be requested: the user's limit (never above the
+    model's max output), else the model's max output, further capped by the room
+    left in the context window. None if no limit is known.
 
     Raises:
         OutputLimitUnavailable: the prompt already fills the context window.
     """
-    limit = max_output_tokens if max_output_tokens is not None else model_max_output_tokens(model)
+    limit = _clamped_limit(model, max_output_tokens)
     window = model_context_window(model)
     if window is not None:
         room = window - prompt_tokens
@@ -126,12 +148,15 @@ def plan_output(
     max_output_tokens: Optional[int] = None,
     min_useful_tokens: int = 64,
     max_call_share: float = 1.0,
+    prompt_margin: float = 0.0,
 ) -> OutputPlan:
     """
     Plan the output side of one call to ``model``.
 
     ``max_call_share`` (0–1] limits how much of ``remaining`` one "truncate" call
-    may reserve, leaving room for concurrent calls near the cap.
+    may reserve, leaving room for concurrent calls near the cap. ``prompt_margin``
+    is added to the prompt estimate when pricing input in "preflight" / "truncate";
+    the context-window room is computed from the raw estimate.
 
     Raises:
         ValueError:             unknown mode.
@@ -140,11 +165,13 @@ def plan_output(
         BudgetExceeded:         "truncate" and fewer than ``min_useful_tokens`` are affordable.
     """
     validate_mode(mode)
+    priced = priced_prompt_tokens(mode, prompt_tokens, prompt_margin)
 
     if mode == "estimate":
         if max_output_tokens is None:
-            return OutputPlan(expected_output_tokens, None)
-        return OutputPlan(min(expected_output_tokens, max_output_tokens), max_output_tokens)
+            return OutputPlan(expected_output_tokens, None, prompt_tokens=priced)
+        sent = _clamped_limit(model, max_output_tokens)
+        return OutputPlan(min(expected_output_tokens, sent), sent, prompt_tokens=priced)
 
     if mode == "preflight":
         # Only the model's own max output counts as a worst case here — a context
@@ -155,20 +182,20 @@ def plan_output(
                 f"max output tokens for model '{model}'. Pass max_output_tokens=..."
             )
         limit = output_limit(model, prompt_tokens, max_output_tokens)
-        return OutputPlan(limit, limit)
+        return OutputPlan(limit, limit, prompt_tokens=priced)
 
     limit = output_limit(model, prompt_tokens, max_output_tokens)
 
     # mode == "truncate"
-    price = tracker.output_price_per_token(model, prompt_tokens)
+    price = tracker.output_price_per_token(model, priced)
     if not price:
         # No output pricing: the budget cannot bound the length, so fall back
         # to the plain limit (or the expected output if there is none).
         tokens = limit if limit is not None else expected_output_tokens
-        return OutputPlan(tokens, tokens)
+        return OutputPlan(tokens, tokens, prompt_tokens=priced)
 
     allowance = remaining * max_call_share
-    input_cost = tracker.estimate_cost(model, prompt_tokens, 0)
+    input_cost = tracker.estimate_cost(model, priced, 0)
     affordable = math.floor((allowance - input_cost) / price) if allowance > input_cost else 0
     if affordable < min_useful_tokens:
         raise BudgetExceeded(
@@ -177,5 +204,5 @@ def plan_output(
             model=model,
         )
     if limit is not None and limit <= affordable:
-        return OutputPlan(limit, limit)
-    return OutputPlan(affordable, affordable, budget_limited=True)
+        return OutputPlan(limit, limit, prompt_tokens=priced)
+    return OutputPlan(affordable, affordable, budget_limited=True, prompt_tokens=priced)

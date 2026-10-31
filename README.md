@@ -537,12 +537,16 @@ router.chat("Write the full report", on_output_overrun="truncate")
 | Mode | Response cut off? | Budget overshoot? | Behaviour |
 |---|---|---|---|
 | `"estimate"` (default) | Never | Possible | Reserves the expected output. Same as before. |
-| `"preflight"` | Never | Never | Reserves the worst-case output before the call. If it doesn't fit, downgrades to the small model or raises `BudgetExhausted` locally. |
-| `"truncate"` | Only if you opt in | Never | Sets `max_tokens` from the remaining budget. Downgrades first; only the small model's response can be cut off, and it is flagged `truncated_by_budget=True`. |
+| `"preflight"` | Never | Never* | Reserves the worst-case output before the call. If it doesn't fit, downgrades to the small model or raises `BudgetExhausted` locally. |
+| `"truncate"` | Only if you opt in | Never* | Sets `max_tokens` from the remaining budget. Downgrades first; only the small model's response can be cut off, and it is flagged `truncated_by_budget=True`. |
 
-`preflight` is most useful with your own `max_output_tokens`: without one, the worst case is the model's full max output (16k+ tokens), which blocks more calls near the end of a budget. The limit is always capped by the room left in the model's context window. In `truncate` mode, `max_call_share=0.5` stops one call from reserving more than half of what's left, so concurrent calls near the cap still get through.
+\* Prompt tokens are an estimate (exact for OpenAI text; approximate for Claude, Gemini, images and tool schemas), so these modes price the prompt with a 20% margin (`prompt_margin=0.2`). An undercount larger than that can still overshoot slightly.
 
-Streaming calls record the provider's reported usage, including hidden reasoning tokens.
+`preflight` is most useful with your own `max_output_tokens`: without one, the worst case is the model's full max output (16k+ tokens), which blocks more calls near the end of a budget. The limit is always capped by the room left in the model's context window. Your own `max_output_tokens` is never sent above the model's real max output. In `truncate` mode, `max_call_share=0.5` stops one call from reserving more than half of what's left, so concurrent calls near the cap still get through.
+
+In `truncate` mode the big model is used only if its *full* response fits, so models with a very large max output (GPT-5, o-series) will usually downgrade unless you set `max_output_tokens`.
+
+Streaming calls record the provider's reported usage, including hidden reasoning tokens. If you stop reading a stream early, Baar closes it and, in `preflight` / `truncate`, records the reserved output rather than just the text you read. The value gate (`value_fn`) compares a task's value with its *expected* cost, not the worst case these modes reserve.
 
 
 ## Security

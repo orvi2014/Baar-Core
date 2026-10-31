@@ -45,6 +45,7 @@ class StepResult:
     failover_count: int = 0
     failover_errors: List[str] = field(default_factory=list)
     truncated_by_budget: bool = False  # True only when Baar's budget-derived max_tokens cut the response off
+    finish_reason: Optional[str] = None  # the provider's: "stop", "length", "tool_calls", …
 
     @property
     def model_used(self) -> str:
@@ -82,6 +83,8 @@ class StepResult:
             d["routing_cache_hit"] = True
         if self.truncated_by_budget:
             d["truncated_by_budget"] = True
+        if self.finish_reason is not None:
+            d["finish_reason"] = self.finish_reason
         return d
 
 
