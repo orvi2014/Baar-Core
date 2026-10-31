@@ -23,7 +23,7 @@ import litellm
 
 from baar.core.budget import BudgetExceeded, BudgetTracker
 
-OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate")
+OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate", "continue")
 
 # Anthropic's minimum thinking budget; also used as the floor for every provider.
 MIN_THINKING_BUDGET = 1024
@@ -239,6 +239,8 @@ def plan_output(
         BudgetExceeded:         "truncate" and fewer than ``min_useful_tokens`` are affordable.
     """
     validate_mode(mode)
+    if mode == "continue":
+        mode = "truncate"  # each segment of a "continue" answer is a truncate call
     plan = _plan(
         mode, model=model, prompt_tokens=prompt_tokens, expected_output_tokens=expected_output_tokens,
         remaining=remaining, tracker=tracker, max_output_tokens=max_output_tokens,

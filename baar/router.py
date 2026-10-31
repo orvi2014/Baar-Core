@@ -204,6 +204,18 @@ def _reported_usage(chunk) -> Optional[tuple]:
     return None
 
 
+_CONTINUE_PROMPT = "Continue exactly where you stopped. Don't repeat anything you already wrote."
+
+# What ends a "continue" answer early: the text so far is returned instead.
+_SEGMENT_STOPS = (BudgetExhausted, BudgetExceeded, TaskRejected, PolicyViolation)
+
+
+def _flag_budget_cut(step: StepResult, reason: BaseException) -> None:
+    """The answer stopped because the budget couldn't pay for another segment."""
+    if isinstance(reason, (BudgetExhausted, BudgetExceeded)) and step.finish_reason == "length":
+        step.truncated_by_budget = True
+
+
 def _validate_thinking_budget(value: Optional[int]) -> None:
     if value is not None and value < caps.MIN_THINKING_BUDGET:
         raise ValueError(
@@ -273,6 +285,8 @@ class BAARConfig:
     thinking_budget: Optional[int] = None  # cap on hidden reasoning tokens (reasoning models only)
     overrun_risk: float = 0.0  # "preflight": reserve the learned (1 - risk) output length, not the worst case
     output_lengths: Optional[Any] = None  # Optional[OutputLengths]; share to pool learned lengths
+    segment_tokens: int = 2000  # "continue": output tokens per segment
+    max_segments: int = 8  # "continue": most segments for one answer
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -358,6 +372,8 @@ class BAARRouter:
         thinking_budget: Optional[int] = None,
         overrun_risk: float = 0.0,
         output_lengths: Optional[OutputLengths] = None,
+        segment_tokens: int = 2000,
+        max_segments: int = 8,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -400,6 +416,8 @@ class BAARRouter:
             thinking_budget=thinking_budget,
             overrun_risk=overrun_risk,
             output_lengths=output_lengths,
+            segment_tokens=segment_tokens,
+            max_segments=max_segments,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -422,6 +440,10 @@ class BAARRouter:
         _validate_thinking_budget(config.thinking_budget)
         if not 0 <= config.overrun_risk < 1:
             raise ValueError("overrun_risk must be in [0, 1)")
+        if config.segment_tokens < config.min_useful_tokens:
+            raise ValueError("segment_tokens must be at least min_useful_tokens")
+        if config.max_segments < 1:
+            raise ValueError("max_segments must be at least 1")
 
         self.small_model = config.small_model
         self.big_model = config.big_model
@@ -435,6 +457,8 @@ class BAARRouter:
         self._prompt_margin = float(config.prompt_margin)
         self._thinking_budget = config.thinking_budget
         self._overrun_risk = float(config.overrun_risk)
+        self._segment_tokens = int(config.segment_tokens)
+        self._max_segments = int(config.max_segments)
         self._output_lengths: OutputLengths = (
             config.output_lengths if config.output_lengths is not None else OutputLengths()
         )
@@ -603,6 +627,29 @@ class BAARRouter:
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
     ) -> str:
+        """
+        Execute a single routed chat call with hard financial guardrails.
+
+        With ``on_output_overrun="continue"`` the answer is generated in segments
+        of ``segment_tokens`` (see _chat_continue). Otherwise it is one call.
+        """
+        if self._resolve_mode(on_output_overrun) == "continue":
+            return self._chat_continue(task, messages, context, max_output_tokens, thinking_budget)
+        return self._chat_step(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+        ).response_text
+
+    def _chat_step(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
+    ) -> StepResult:
         """
         Execute a single routed chat call with hard financial guardrails.
 
@@ -800,7 +847,7 @@ class BAARRouter:
         self._log.add(step_result)
         self._append_telemetry(step_result)
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
-        return step_result.response_text
+        return step_result
 
     def stream_chat(
         self,
@@ -811,6 +858,29 @@ class BAARRouter:
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
+    ) -> Iterator[str]:
+        """
+        Streaming version of chat() — yields text chunks as they arrive. With
+        on_output_overrun="continue", segments are streamed one after another.
+        """
+        if self._resolve_mode(on_output_overrun) == "continue":
+            yield from self._stream_continue(task, messages, context, max_output_tokens, thinking_budget)
+            return
+        yield from self._stream_step(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+        )
+
+    def _stream_step(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
+        step_sink: Optional[list] = None,
     ) -> Iterator[str]:
         """
         Streaming version of chat() — yields text chunks as they arrive.
@@ -1041,6 +1111,8 @@ class BAARRouter:
                 self._append_telemetry(step_result)
                 if completed:  # an early exit records the reservation, not a real length
                     self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
+                if step_sink is not None:
+                    step_sink.append(step_result)
             except Exception as _e:
                 self._log.errors.append(f"post-stream recording failed: {type(_e).__name__}: {_e}")
             finally:
@@ -1081,6 +1153,25 @@ class BAARRouter:
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
     ) -> str:
+        """Async chat() — same guardrails, including on_output_overrun="continue"."""
+        if self._resolve_mode(on_output_overrun) == "continue":
+            return await self._achat_continue(task, messages, context, max_output_tokens, thinking_budget)
+        step = await self._achat_step(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+        )
+        return step.response_text
+
+    async def _achat_step(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
+    ) -> StepResult:
         """
         Async version of chat() — identical hard financial guardrails,
         non-blocking for asyncio / FastAPI / aiohttp applications.
@@ -1273,7 +1364,7 @@ class BAARRouter:
         self._log.add(step_result)
         self._append_telemetry(step_result)
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
-        return step_result.response_text
+        return step_result
 
     async def astream_chat(
         self,
@@ -1284,6 +1375,38 @@ class BAARRouter:
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Async streaming chat() — same guardrails, including on_output_overrun="continue"."""
+        if self._resolve_mode(on_output_overrun) == "continue":
+            segments = self._astream_continue(task, messages, context, max_output_tokens, thinking_budget)
+            try:
+                async for delta in segments:
+                    yield delta
+            finally:
+                await segments.aclose()
+            return
+        inner = self._astream_step(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+        )
+        try:
+            async for delta in inner:
+                yield delta
+        finally:
+            # Unlike `yield from`, `async for` doesn't pass a close on to the inner
+            # generator: close it now so an early exit ends the provider stream.
+            await inner.aclose()
+
+    async def _astream_step(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
+        step_sink: Optional[list] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Async streaming version of achat() — yields text chunks as they arrive.
@@ -1513,6 +1636,8 @@ class BAARRouter:
                 self._append_telemetry(step_result)
                 if completed:  # an early exit records the reservation, not a real length
                     self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
+                if step_sink is not None:
+                    step_sink.append(step_result)
             except Exception as _e:
                 self._log.errors.append(f"post-stream recording failed: {type(_e).__name__}: {_e}")
             finally:
@@ -1796,6 +1921,131 @@ class BAARRouter:
         else:
             return decision, model_to_use
         return self._run_value_gate(task, decision, model_to_use, tc, expected_tokens, afford, estimated_value)
+
+    def _resolve_mode(self, on_output_overrun: Optional[str]) -> str:
+        mode = on_output_overrun if on_output_overrun is not None else self._on_output_overrun
+        caps.validate_mode(mode)
+        return mode
+
+    # ── "continue": an answer in segments ─────────────────────────────────────
+    # Each segment is a "truncate" call capped at segment_tokens, so it reserves
+    # only its own cost. A segment that stops at its limit is continued with the
+    # text so far; the answer ends when the model finishes, the user's
+    # max_output_tokens is reached, max_segments is hit, or the budget can't pay
+    # for another useful segment (then the last step is flagged truncated_by_budget).
+
+    def _segment_limit(self, limit: Optional[int], used: int) -> int:
+        return self._segment_tokens if limit is None else min(self._segment_tokens, limit - used)
+
+    @staticmethod
+    def _segment_messages(task: str, messages: Optional[List[dict]], so_far: str) -> Optional[List[dict]]:
+        if not so_far:
+            return messages
+        base = list(messages) if messages is not None else [{"role": "user", "content": task}]
+        return base + [{"role": "assistant", "content": so_far}, {"role": "user", "content": _CONTINUE_PROMPT}]
+
+    @staticmethod
+    def _segment_done(step: StepResult, limit: Optional[int], used: int) -> bool:
+        return step.finish_reason != "length" or (limit is not None and used >= limit)
+
+    def _chat_continue(self, task, messages, context, max_output_tokens, thinking_budget) -> str:
+        _, limit, thinking = self._resolve_output_opts("continue", max_output_tokens, thinking_budget)
+        parts: List[str] = []
+        used, last = 0, None
+        for _ in range(self._max_segments):
+            try:
+                last = self._chat_step(
+                    task, messages=self._segment_messages(task, messages, "".join(parts)), context=context,
+                    on_output_overrun="truncate", max_output_tokens=self._segment_limit(limit, used),
+                    thinking_budget=thinking,
+                )
+            except _SEGMENT_STOPS as e:
+                if last is None:
+                    raise
+                _flag_budget_cut(last, e)
+                break
+            parts.append(last.response_text)
+            used += last.completion_tokens
+            if self._segment_done(last, limit, used):
+                break
+        return "".join(parts)
+
+    async def _achat_continue(self, task, messages, context, max_output_tokens, thinking_budget) -> str:
+        _, limit, thinking = self._resolve_output_opts("continue", max_output_tokens, thinking_budget)
+        parts: List[str] = []
+        used, last = 0, None
+        for _ in range(self._max_segments):
+            try:
+                last = await self._achat_step(
+                    task, messages=self._segment_messages(task, messages, "".join(parts)), context=context,
+                    on_output_overrun="truncate", max_output_tokens=self._segment_limit(limit, used),
+                    thinking_budget=thinking,
+                )
+            except _SEGMENT_STOPS as e:
+                if last is None:
+                    raise
+                _flag_budget_cut(last, e)
+                break
+            parts.append(last.response_text)
+            used += last.completion_tokens
+            if self._segment_done(last, limit, used):
+                break
+        return "".join(parts)
+
+    def _stream_continue(self, task, messages, context, max_output_tokens, thinking_budget) -> Iterator[str]:
+        _, limit, thinking = self._resolve_output_opts("continue", max_output_tokens, thinking_budget)
+        parts: List[str] = []
+        used, last = 0, None
+        for _ in range(self._max_segments):
+            sink: list = []
+            try:
+                for delta in self._stream_step(
+                    task, messages=self._segment_messages(task, messages, "".join(parts)), context=context,
+                    on_output_overrun="truncate", max_output_tokens=self._segment_limit(limit, used),
+                    thinking_budget=thinking, step_sink=sink,
+                ):
+                    parts.append(delta)
+                    yield delta
+            except _SEGMENT_STOPS as e:
+                if last is None:
+                    raise
+                _flag_budget_cut(last, e)
+                return
+            if not sink:
+                return
+            last = sink[0]
+            used += last.completion_tokens
+            if self._segment_done(last, limit, used):
+                return
+
+    async def _astream_continue(self, task, messages, context, max_output_tokens, thinking_budget):
+        _, limit, thinking = self._resolve_output_opts("continue", max_output_tokens, thinking_budget)
+        parts: List[str] = []
+        used, last = 0, None
+        for _ in range(self._max_segments):
+            sink: list = []
+            segment = self._astream_step(
+                task, messages=self._segment_messages(task, messages, "".join(parts)), context=context,
+                on_output_overrun="truncate", max_output_tokens=self._segment_limit(limit, used),
+                thinking_budget=thinking, step_sink=sink,
+            )
+            try:
+                async for delta in segment:
+                    parts.append(delta)
+                    yield delta
+            except _SEGMENT_STOPS as e:
+                if last is None:
+                    raise
+                _flag_budget_cut(last, e)
+                return
+            finally:
+                await segment.aclose()
+            if not sink:
+                return
+            last = sink[0]
+            used += last.completion_tokens
+            if self._segment_done(last, limit, used):
+                return
 
     def _resolve_output_opts(
         self,

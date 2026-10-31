@@ -5,6 +5,15 @@ All notable changes to baar-core are documented here.
 ## [Unreleased]
 
 ### Added
+- **`on_output_overrun="continue"`** — the answer is generated in segments of
+  `segment_tokens` (default 2000). Each segment reserves only its own cost (unlike
+  `"truncate"`, which can reserve the whole remaining budget), and a segment that stops at
+  its limit is continued with the text so far. The answer ends when the model finishes,
+  `max_output_tokens` (the total) is reached, `max_segments` (default 8) is hit, or the
+  budget can't pay for another useful segment — then the text so far is returned and the
+  last step is flagged `truncated_by_budget`. A value-gate rejection or policy block on a
+  later segment also returns the text so far. Works on all four entry points; each segment
+  is its own step in the log.
 - **OverThink benchmark** (`benchmarks/overthink_eval.py`) — a deterministic agent run under
   inflated hidden reasoning (OverThink, arXiv 2502.02542) against a simulated reasoning
   model, comparing post-hoc alerts and each output mode on overshoot, cut-off answers,
