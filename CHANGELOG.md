@@ -2,6 +2,22 @@
 
 All notable changes to baar-core are documented here.
 
+## [Unreleased]
+
+### Added
+- **Certified early stopping** (`baar.early_stop`). An `EarlyStopPolicy` scores, at fixed
+  checkpoints of a run (0, 5, 10, … calls), how likely the run is to cost more than its
+  budget, and stops it before the next call once the score reaches a threshold. The
+  threshold is certified with fixed-sequence Learn-then-Test on logged runs, so that
+  P(stopping a run that would have finished, or resolved its task, within budget) ≤ ε
+  with confidence 1 − δ. `fit_early_stop(runs, budget, counter_keys=...)` fits one
+  logistic model per checkpoint (pure Python); `calibrate_early_stop(policy, runs, eps,
+  delta, harm="finish"|"resolve")` certifies the threshold (never-stop when nothing can
+  be certified). `BAARRouter(early_stop=policy)` checks the policy before every call and
+  raises `RunStopped` (a `BudgetExhausted`) with zero network calls;
+  `router.record_event(name)` feeds behaviour counts such as tool errors to the policy.
+  Off by default.
+
 ## [0.11.0] — 2026-11-06
 
 ### Added

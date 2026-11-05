@@ -22,6 +22,9 @@ Every table in the paper is generated from the analysis outputs by
 | `swe/` | 3,000 OpenHands trajectories on SWE-rebench, converted to the same log format (see `swe/README.md`) |
 | `sim/real_v2.py --prompt-add 3121` → `sim/swe_v3.json` | The same analysis on the coding-agent runs, with tool-schema tokens added (Table 4) |
 | `sim/swe_waste.py` → `sim/swe_waste.json` | Runs stopped mid-task and the spend they absorb (Section 8) |
+| `swe/scripts/behavior.py` → `swe/behavior.json.gz` | Per-step agent behaviour (commands, edits, tests, tool errors, repeats) for the coding-agent runs |
+| `sim/admission.py` → `sim/admission_{base,behavior,full}.json` | Certified early stopping, 200 held-out splits, three feature sets (Tables 5–6) |
+| `sim/admission_auc.py` → `sim/admission_auc.json` | Predictability by checkpoint and the oracle saving ceiling (Table 6) |
 | `sim/analysis_v2.json`, `sim/real_v2.json`, `sim/swe_v2.json` | Earlier outputs superseded after the second review, kept for the record |
 | `sim/sim_ltt.py`, `sim_ltt_repeat_par.py`, `make_tables.py`, `ltt_repeat.jsonl`, `tables.jsonl`, `real_replay.py`, `real_results.json` | First-version analyses, kept for the record |
 
@@ -39,6 +42,12 @@ python real_v2.py ../swe/swe_log.jsonl.gz swe_v3.json --prompt-add 3121
 python swe_waste.py ../swe/swe_log.jsonl.gz swe_waste.json --prompt-add 3121
 python figures.py analysis_v3.json ../preprint/figs
 python make_tex.py analysis_v3.json real_v3.json swe_v3.json ../preprint/tables
+python -I ../swe/scripts/behavior.py ../swe/raw/sample_3000_seed0.parquet ../swe/behavior.json.gz
+for f in base behavior full; do
+  python admission.py ../swe/swe_log.jsonl.gz admission_$f.json --prompt-add 3121 --behavior ../swe/behavior.json.gz --features $f
+done
+python admission_auc.py ../swe/swe_log.jsonl.gz ../swe/behavior.json.gz admission_auc.json --prompt-add 3121
+python make_tex_es.py admission_base.json admission_behavior.json admission_full.json admission_auc.json ../preprint/tables
 ```
 
 All seeds are fixed. The simulation pools (`pool/*.npz`, about 70 MB) and the

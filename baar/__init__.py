@@ -17,6 +17,7 @@ from baar.core.caps import OutputLimitUnavailable
 from baar.core.lengths import OutputLengths
 from baar.core.awareness import BudgetStatus, WindDown
 from baar.calibration import CalibrationResult, QuantileTable, calibrate_from_failures, ltt_select
+from baar.early_stop import EarlyStopPolicy, RunState, RunStopped, fit_early_stop, calibrate_early_stop
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 from baar.core.policy import Policy, PolicyAction, Rule
@@ -36,6 +37,11 @@ __all__ = [
     "CalibrationResult",
     "ltt_select",
     "calibrate_from_failures",
+    "EarlyStopPolicy",
+    "RunState",
+    "RunStopped",
+    "fit_early_stop",
+    "calibrate_early_stop",
     "BudgetTracker",
     "BudgetWindow",
     "Alert",
