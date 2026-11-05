@@ -13,17 +13,22 @@ Modes (``on_output_overrun``):
                   blocked before any network request.
   - "truncate"  — opt-in. Derive ``max_tokens`` from the remaining budget, so
                   a long response is cut off instead of overshooting.
+  - "calibrated" — reserve the empirical (1 - beta) quantile of logged output
+                  lengths (see ``baar.calibration``). Never cuts responses off;
+                  ``beta`` is chosen so that P(run overruns) <= eps with
+                  confidence 1 - delta. Without a usable quantile it behaves
+                  exactly like "preflight".
 """
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import litellm
 
 from baar.core.budget import BudgetExceeded, BudgetTracker
 
-OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate")
+OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate", "calibrated")
 
 
 class OutputLimitUnavailable(ValueError):
@@ -125,14 +130,22 @@ def plan_output(
     tracker: BudgetTracker,
     max_output_tokens: Optional[int] = None,
     min_useful_tokens: int = 64,
+    quantiles: Optional[Any] = None,
+    beta: Optional[float] = None,
+    kind: str = "any",
 ) -> OutputPlan:
     """
     Plan the output side of one call to ``model``.
 
     Raises:
         ValueError:             unknown mode.
-        OutputLimitUnavailable: "preflight" with no known output limit, or the
+        OutputLimitUnavailable: "preflight" (or "calibrated" without a usable
+                                quantile) with no known output limit, or the
                                 prompt fills the context window.
+
+    "calibrated" uses ``quantiles.bound(model, kind, beta)`` (a
+    ``baar.calibration.QuantileTable``); it sends no ``max_tokens`` unless you
+    set ``max_output_tokens``, so the budget never cuts a response off.
         BudgetExceeded:         "truncate" and fewer than ``min_useful_tokens`` are affordable.
     """
     validate_mode(mode)
@@ -141,6 +154,14 @@ def plan_output(
         if max_output_tokens is None:
             return OutputPlan(expected_output_tokens, None)
         return OutputPlan(min(expected_output_tokens, max_output_tokens), max_output_tokens)
+
+    if mode == "calibrated":
+        q = quantiles.bound(model, kind, beta) if quantiles is not None else None
+        if q is not None:
+            limit = output_limit(model, prompt_tokens, max_output_tokens)
+            planned = max(1, int(q)) if limit is None else max(1, min(int(q), limit))
+            return OutputPlan(planned, max_output_tokens)
+        mode = "preflight"  # no usable quantile, or beta=None (nothing certified)
 
     if mode == "preflight":
         # Only the model's own max output counts as a worst case here — a context

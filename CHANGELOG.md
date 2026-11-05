@@ -17,6 +17,15 @@ All notable changes to baar-core are documented here.
   - `"truncate"` — opt-in. Derives `max_tokens` from the remaining budget. The big model
     is used only if its full response fits; otherwise Baar downgrades first and only the
     small model's response can be cut off.
+- **`"calibrated"` output mode** — reserves the empirical (1 − β) quantile of logged
+  output lengths per (model, step kind) instead of the mean or the worst case. Never
+  cuts responses off. Configure with `output_quantiles=QuantileTable(...)` and
+  `calibration_beta=` (a float or a `CalibrationResult`); without a usable quantile, or
+  when calibration certified nothing (`beta=None`), it behaves exactly like `"preflight"`.
+- `baar.calibration` — `QuantileTable` (build from logged calls, JSON save/load),
+  `ltt_select(betas, run_fn, n, eps, delta)` (fixed-sequence Learn-then-Test: picks β so
+  that P(run failure rate ≤ ε) ≥ 1 − δ from i.i.d. runs), `calibrate_from_failures`, and
+  `CalibrationResult`. Exact binomial p-values, no new dependencies.
 - `max_output_tokens` (router and per call) — your own output limit, forwarded to the
   provider as `max_tokens`. `min_useful_tokens` (default 64) — `"truncate"` blocks
   locally when fewer tokens are affordable.
@@ -29,7 +38,32 @@ All notable changes to baar-core are documented here.
 - Vercel proxy and LangChain `BaarChatModel` forward a request's own `max_tokens` as
   `max_output_tokens`.
 
+### Added (tool calling)
+- `BAARRouter.chat` / `achat` accept `tools=` and `tool_choice=`, and new
+  `complete()` / `acomplete()` return the provider's full response (tool calls,
+  finish reason) under the same budget guardrails. Streaming methods do not take tools yet.
+
 ### Fixed
+- **Pre-flight prompt counts ignored tool schemas.** Providers bill tool/function
+  definitions as prompt tokens, but `token_counter` had no way to include them, and the
+  LangChain `BaarCallbackHandler` flattened messages to plain text and never saw tools
+  bound with `bind_tools()`. Measured on 5,487 real OpenAI calls with one small tool,
+  the estimate was short in 94% of calls (37 tokens on the first step). `token_counter`
+  now takes `tools=`, and the callback counts the full message list (per-message
+  overhead, assistant tool calls, tool-call ids) plus bound tool schemas from
+  `invocation_params`. With tools included the estimate matched OpenAI's billed prompt
+  tokens to within one token. The heuristic fallback no longer crashes on messages with
+  `content=None`.
+- **Tool calling did not work through the OpenAI-compatible proxy** (Vercel and
+  Hermes integrations). The proxy dropped `tools`/`tool_choice` from requests, rejected
+  assistant messages with `content: null` (every tool-call turn) and multi-part content
+  with a 422, and could only return plain text. It now forwards tools (legacy
+  `functions`/`function_call` are mapped onto them), keeps `tool_calls`,
+  `tool_call_id` and unknown message fields, counts tool schemas in the pre-flight
+  estimate, and returns `tool_calls` with the real `finish_reason`. Streaming requests
+  with tools run the call under the same guardrails and replay it as standard OpenAI
+  chunks. Verified live against OpenAI: tool call, tool result, final answer.
+
 - **Streaming under-recorded spend.** `stream_chat` / `astream_chat` counted only the
   visible text, so hidden reasoning tokens (o-series, GPT-5, Claude and Gemini thinking)
   were never recorded. Streams now request provider usage via

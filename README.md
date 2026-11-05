@@ -482,8 +482,24 @@ router.chat("Write the full report", on_output_overrun="truncate")
 | `"estimate"` (default) | Never | Possible | Reserves the expected output. Same as before. |
 | `"preflight"` | Never | Never | Reserves the worst-case output before the call. If it doesn't fit, downgrades to the small model or raises `BudgetExhausted` locally. |
 | `"truncate"` | Only if you opt in | Never | Sets `max_tokens` from the remaining budget. Downgrades first; only the small model's response can be cut off, and it is flagged `truncated_by_budget=True`. |
+| `"calibrated"` | Never | With probability ≤ ε | Reserves a quantile of your logged output lengths, with β calibrated on real runs (below). Falls back to `preflight` when nothing is calibrated. |
 
 `preflight` is most useful with your own `max_output_tokens`: without one, the worst case is the model's full max output (16k+ tokens), which blocks more calls near the end of a budget. The limit is always capped by the room left in the model's context window.
+
+### Calibrated mode
+
+`calibrated` sits between `estimate` and `preflight`: you pick a tolerance ε, and Baar picks how much output to reserve so that at most ε of your agent runs overspend (with confidence 1 − δ). Calibrate once on runs from your own workload:
+
+```python
+from baar import BAARRouter, QuantileTable, ltt_select
+
+table = QuantileTable.from_records(logged_calls)   # (model, kind, completion_tokens)
+result = ltt_select([0.01, 0.05, 0.1, 0.2, 0.3], run_agent_batch, n=1000, eps=0.05, delta=0.05)
+router = BAARRouter(budget=0.10, on_output_overrun="calibrated",
+                    output_quantiles=table, calibration_beta=result)
+```
+
+`run_agent_batch(beta, n)` runs `n` fresh tasks with that β and returns how many overspent. The guarantee assumes future tasks look like the calibration tasks; recalibrate when prices, models or workload change.
 
 Streaming calls record the provider's reported usage, including hidden reasoning tokens.
 

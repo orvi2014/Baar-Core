@@ -19,6 +19,7 @@ from typing import AsyncGenerator, AsyncIterator, Callable, Iterator, List, Opti
 
 from baar.core.router import Router, ModelTier
 from baar.core import caps
+from baar.calibration import resolve_beta
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
@@ -66,7 +67,7 @@ def _is_retryable(exc: Exception) -> bool:
     return bool(_LITELLM_RETRYABLE) and isinstance(exc, _LITELLM_RETRYABLE)
 
 
-def token_counter(text: str = "", model: str = "gpt-4o", messages=None) -> int:
+def token_counter(text: str = "", model: str = "gpt-4o", messages=None, tools=None) -> int:
     """
     Estimate token count for a task or message list.
     Used for pre-flight budget checks (BCD).
@@ -76,15 +77,35 @@ def token_counter(text: str = "", model: str = "gpt-4o", messages=None) -> int:
         model:    LiteLLM model name for tokenizer selection.
         messages: Optional list of message dicts. When provided, counts tokens
                   for the entire message list instead of plain text.
+        tools:    Optional OpenAI-style tool/function definitions sent with the
+                  request. Providers bill them as prompt tokens; omitting them
+                  under-counts every tool-using call (about 37 tokens for one
+                  small schema on OpenAI).
     """
+    if tools and messages is None:
+        messages = [{"role": "user", "content": text}]
     try:
         if messages is not None:
+            if tools:
+                try:
+                    return litellm.token_counter(model=model, messages=messages, tools=tools)
+                except TypeError:  # litellm without tools= support
+                    return (litellm.token_counter(model=model, messages=messages)
+                            + _approx_tool_tokens(tools))
             return litellm.token_counter(model=model, messages=messages)
         return litellm.token_counter(model=model, text=text)
     except Exception:
         if messages is not None:
-            return sum(len(m.get("content", "")) // 4 for m in messages)
+            n = sum(len(str(m.get("content") or "")) // 4 for m in messages)
+            return max(1, n + _approx_tool_tokens(tools))
         return max(1, len(text) // 4)
+
+
+def _approx_tool_tokens(tools) -> int:
+    """Rough fallback: ~4 characters per token over the serialized schemas."""
+    if not tools:
+        return 0
+    return len(json.dumps(tools, default=str)) // 4
 
 
 # ── Version guard ──────────────────────────────────────────────────────────────
@@ -119,6 +140,8 @@ def _sync_completion_with_retry(
     timeout: Optional[float] = None,
     max_tokens: Optional[int] = None,
     stream_options: Optional[dict] = None,
+    tools: Optional[list] = None,
+    tool_choice: Any = None,
 ) -> object:
     """Synchronous LiteLLM completion with exponential backoff on transient errors."""
     delay = 1.0
@@ -129,6 +152,10 @@ def _sync_completion_with_retry(
         kwargs["max_tokens"] = max_tokens
     if stream_options is not None:
         kwargs["stream_options"] = stream_options
+    if tools:
+        kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
     for attempt in range(max_retries + 1):
         try:
             return litellm.completion(**kwargs)
@@ -148,6 +175,8 @@ async def _async_completion_with_retry(
     timeout: Optional[float] = None,
     max_tokens: Optional[int] = None,
     stream_options: Optional[dict] = None,
+    tools: Optional[list] = None,
+    tool_choice: Any = None,
 ) -> object:
     """Async LiteLLM completion with exponential backoff on transient errors."""
     delay = 1.0
@@ -158,6 +187,10 @@ async def _async_completion_with_retry(
         kwargs["max_tokens"] = max_tokens
     if stream_options is not None:
         kwargs["stream_options"] = stream_options
+    if tools:
+        kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
     for attempt in range(max_retries + 1):
         try:
             return await litellm.acompletion(**kwargs)
@@ -233,9 +266,11 @@ class BAARConfig:
     policy: Optional[Policy] = None
     window: Optional[BudgetWindow] = None
     alerts: Optional[List[Alert]] = None
-    on_output_overrun: str = "estimate"  # "estimate" | "preflight" | "truncate" — see baar.core.caps
+    on_output_overrun: str = "estimate"  # "estimate" | "preflight" | "truncate" | "calibrated" — see baar.core.caps
     max_output_tokens: Optional[int] = None
     min_useful_tokens: int = 64  # "truncate" blocks locally below this many affordable tokens
+    output_quantiles: Optional[Any] = None  # baar.calibration.QuantileTable, for "calibrated"
+    calibration_beta: Optional[Any] = None  # float or baar.calibration.CalibrationResult, for "calibrated"
 
     @classmethod
     def anthropic(cls, **kwargs: Any) -> "BAARConfig":
@@ -316,6 +351,8 @@ class BAARRouter:
         on_output_overrun: str = "estimate",
         max_output_tokens: Optional[int] = None,
         min_useful_tokens: int = 64,
+        output_quantiles: Optional[Any] = None,
+        calibration_beta: Optional[Any] = None,
     ):
         _check_litellm_version()
         self._configure(BAARConfig(
@@ -353,6 +390,8 @@ class BAARRouter:
             on_output_overrun=on_output_overrun,
             max_output_tokens=max_output_tokens,
             min_useful_tokens=min_useful_tokens,
+            output_quantiles=output_quantiles,
+            calibration_beta=calibration_beta,
         ))
 
     def _configure(self, config: BAARConfig) -> None:
@@ -368,6 +407,13 @@ class BAARRouter:
             raise ValueError("max_output_tokens must be a positive integer or None")
         if config.min_useful_tokens < 1:
             raise ValueError("min_useful_tokens must be a positive integer")
+        self._calibration_beta = resolve_beta(config.calibration_beta)
+        self._output_quantiles = config.output_quantiles
+        self._calibration_configured = (
+            config.output_quantiles is not None and config.calibration_beta is not None
+        )
+        if config.on_output_overrun == "calibrated":
+            self._require_calibration()
 
         self.small_model = config.small_model
         self.big_model = config.big_model
@@ -527,7 +573,7 @@ class BAARRouter:
 
     # ── Sync execution ─────────────────────────────────────────────────────────
 
-    def chat(
+    def _chat_core(
         self,
         task: str,
         *,
@@ -535,7 +581,9 @@ class BAARRouter:
         context: Optional[dict] = None,
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
-    ) -> str:
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ) -> tuple:
         """
         Execute a single routed chat call with hard financial guardrails.
 
@@ -556,7 +604,7 @@ class BAARRouter:
 
         def tc(model: str) -> int:
             if model not in _tc_cache:
-                _tc_cache[model] = token_counter(messages=msgs, model=model)
+                _tc_cache[model] = token_counter(messages=msgs, model=model, tools=tools)
             return _tc_cache[model]
 
         mode, limit = self._resolve_output_opts(on_output_overrun, max_output_tokens)
@@ -684,7 +732,8 @@ class BAARRouter:
                 # remaining would reject valid fallbacks at low budget (same fix as achat).
                 try:
                     response = _sync_completion_with_retry(
-                        candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens
+                        candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens,
+                        tools=tools, tool_choice=tool_choice,
                     )
                     model_to_use = candidate
                     break
@@ -728,7 +777,7 @@ class BAARRouter:
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
-        return step_result.response_text
+        return step_result.response_text, response
 
     def stream_chat(
         self,
@@ -979,9 +1028,7 @@ class BAARRouter:
                     break
         return self._log
 
-    # ── Async execution ────────────────────────────────────────────────────────
-
-    async def achat(
+    def chat(
         self,
         task: str,
         *,
@@ -989,7 +1036,56 @@ class BAARRouter:
         context: Optional[dict] = None,
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
     ) -> str:
+        """
+        Execute a single routed chat call with hard financial guardrails.
+
+        Returns the response text. ``tools`` / ``tool_choice`` are forwarded to the
+        provider and their schemas are counted in the pre-flight estimate; use
+        ``complete()`` to get the tool calls the model makes.
+        """
+        text, _ = self._chat_core(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, tools=tools, tool_choice=tool_choice,
+        )
+        return text
+
+    def complete(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ):
+        """
+        Same guardrails as ``chat()``, but returns the provider's full response
+        (a LiteLLM ``ModelResponse``), including ``tool_calls`` and ``finish_reason``.
+        """
+        _, response = self._chat_core(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, tools=tools, tool_choice=tool_choice,
+        )
+        return response
+
+    # ── Async execution ────────────────────────────────────────────────────────
+
+    async def _achat_core(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ) -> tuple:
         """
         Async version of chat() — identical hard financial guardrails,
         non-blocking for asyncio / FastAPI / aiohttp applications.
@@ -1005,7 +1101,7 @@ class BAARRouter:
 
         def tc(model: str) -> int:
             if model not in _tc_cache:
-                _tc_cache[model] = token_counter(messages=msgs, model=model)
+                _tc_cache[model] = token_counter(messages=msgs, model=model, tools=tools)
             return _tc_cache[model]
 
         mode, limit = self._resolve_output_opts(on_output_overrun, max_output_tokens)
@@ -1133,7 +1229,8 @@ class BAARRouter:
                 # remaining would reject the primary candidate at low budget (BUG FIX).
                 try:
                     response = await _async_completion_with_retry(
-                        candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens
+                        candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens,
+                        tools=tools, tool_choice=tool_choice,
                     )
                     model_to_use = candidate
                     break
@@ -1177,7 +1274,52 @@ class BAARRouter:
         )
         self._log.add(step_result)
         self._append_telemetry(step_result)
-        return step_result.response_text
+        return step_result.response_text, response
+
+    async def achat(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ) -> str:
+        """
+        Async version of chat().
+
+        Returns the response text. ``tools`` / ``tool_choice`` are forwarded to the
+        provider and their schemas are counted in the pre-flight estimate; use
+        ``acomplete()`` to get the tool calls the model makes.
+        """
+        text, _ = await self._achat_core(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, tools=tools, tool_choice=tool_choice,
+        )
+        return text
+
+    async def acomplete(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ):
+        """
+        Same guardrails as ``achat()``, but returns the provider's full response
+        (a LiteLLM ``ModelResponse``), including ``tool_calls`` and ``finish_reason``.
+        """
+        _, response = await self._achat_core(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, tools=tools, tool_choice=tool_choice,
+        )
+        return response
 
     async def astream_chat(
         self,
@@ -1676,6 +1818,8 @@ class BAARRouter:
         """Per-call overrides win over router config. Returns (mode, max_output_tokens)."""
         mode = on_output_overrun if on_output_overrun is not None else self._on_output_overrun
         caps.validate_mode(mode)
+        if mode == "calibrated":
+            self._require_calibration()
         limit = max_output_tokens if max_output_tokens is not None else self._max_output_tokens
         if limit is not None and limit < 1:
             raise ValueError("max_output_tokens must be a positive integer or None")
@@ -1699,7 +1843,16 @@ class BAARRouter:
             tracker=self._tracker,
             max_output_tokens=limit,
             min_useful_tokens=self._min_useful_tokens,
+            quantiles=self._output_quantiles,
+            beta=self._calibration_beta,
         )
+
+    def _require_calibration(self) -> None:
+        if not self._calibration_configured:
+            raise ValueError(
+                "on_output_overrun='calibrated' needs output_quantiles (a QuantileTable) and "
+                "calibration_beta (a float, or the CalibrationResult from ltt_select) on the router"
+            )
 
     def _check_output_affordable(
         self,

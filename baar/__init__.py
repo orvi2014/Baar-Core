@@ -14,6 +14,7 @@ from baar.router import BAARRouter, BAARConfig, token_counter
 from baar.core.budget import BudgetExceeded, BudgetTracker, BudgetWindow, Alert, WindowedBudgetStore
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.caps import OutputLimitUnavailable
+from baar.calibration import CalibrationResult, QuantileTable, calibrate_from_failures, ltt_select
 from baar.core.router import Router, ModelTier, RoutingDecision
 from baar.core.models import StepResult, RoutingLog
 from baar.core.policy import Policy, PolicyAction, Rule
@@ -25,6 +26,10 @@ __all__ = [
     "token_counter",
     "BudgetExceeded",
     "OutputLimitUnavailable",
+    "QuantileTable",
+    "CalibrationResult",
+    "ltt_select",
+    "calibrate_from_failures",
     "BudgetTracker",
     "BudgetWindow",
     "Alert",

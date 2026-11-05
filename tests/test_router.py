@@ -622,3 +622,37 @@ class TestCoverageGaps:
             await r._acompute_complexity_uncached("Write a complex distributed system")
         _, kwargs = mock_acomp.call_args
         assert kwargs.get("timeout") == 7.0
+
+
+
+# ── token_counter: tool schemas are billed as prompt tokens ───────────────────
+
+def test_token_counter_includes_tools():
+    from baar.router import token_counter
+    tools = [{"type": "function", "function": {
+        "name": "lookup", "description": "Return the paragraph for an article title.",
+        "parameters": {"type": "object", "properties": {"title": {"type": "string"}},
+                       "required": ["title"]}}}]
+    msgs = [{"role": "user", "content": "Who wrote Hamlet?"}]
+    without = token_counter(messages=msgs, model="gpt-4o-mini")
+    with_tools = token_counter(messages=msgs, model="gpt-4o-mini", tools=tools)
+    assert with_tools > without + 15
+
+
+def test_token_counter_tools_with_plain_text():
+    from baar.router import token_counter
+    tools = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": {}}}}]
+    assert token_counter("hello there", model="gpt-4o-mini", tools=tools) > token_counter("hello there", model="gpt-4o-mini")
+
+
+def test_token_counter_fallback_handles_null_content_and_tools(monkeypatch):
+    import baar.router as r
+
+    def boom(**kw):
+        raise RuntimeError("tokenizer unavailable")
+
+    monkeypatch.setattr(r.litellm, "token_counter", boom)
+    msgs = [{"role": "assistant", "content": None}, {"role": "user", "content": "x" * 40}]
+    tools = [{"type": "function", "function": {"name": "f" * 40}}]
+    assert r.token_counter(messages=msgs, model="gpt-4o-mini") == 10
+    assert r.token_counter(messages=msgs, model="gpt-4o-mini", tools=tools) > 10
