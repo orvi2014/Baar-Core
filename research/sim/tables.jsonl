@@ -1,0 +1,48 @@
+{"scenario": "valid", "mode": "A", "eps": 0.01, "method": "estimate", "overrun": 0.0469, "trunc": 0.0, "complete": 0.88815, "util": 0.855523170375, "steps": 5.1343, "big": 0.4455816761778626}
+{"scenario": "valid", "mode": "A", "eps": 0.01, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.05, "method": "estimate", "overrun": 0.0469, "trunc": 0.0, "complete": 0.88815, "util": 0.855523170375, "steps": 5.1343, "big": 0.4455816761778626}
+{"scenario": "valid", "mode": "A", "eps": 0.05, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.01, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.1, "method": "estimate", "overrun": 0.0469, "trunc": 0.0, "complete": 0.88815, "util": 0.855523170375, "steps": 5.1343, "big": 0.4455816761778626}
+{"scenario": "valid", "mode": "A", "eps": 0.05, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.99985, "util": 0.21563310712499997, "steps": 6.6097, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.1, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.1, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.99985, "util": 0.21507780825000003, "steps": 6.58745, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.01, "method": "estimate", "overrun": 0.0, "trunc": 0.1355, "complete": 0.88815, "util": 0.8105744338749999, "steps": 5.1343, "big": 0.4455816761778626}
+{"scenario": "valid", "mode": "B", "eps": 0.01, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.01, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.05, "method": "ltt", "beta": 0.2, "overrun": 0.0263, "trunc": 0.0, "complete": 0.90375, "util": 0.8054051756250001, "steps": 5.23175, "big": 0.4141444067472643}
+{"scenario": "valid", "mode": "B", "eps": 0.05, "method": "estimate", "overrun": 0.0, "trunc": 0.1355, "complete": 0.88815, "util": 0.8105744338749999, "steps": 5.1343, "big": 0.4455816761778626}
+{"scenario": "valid", "mode": "B", "eps": 0.05, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "A", "eps": 0.1, "method": "ltt", "beta": 0.5, "overrun": 0.06465, "trunc": 0.0, "complete": 0.88365, "util": 0.8770418415, "steps": 5.14265, "big": 0.4518973680884369}
+{"scenario": "valid", "mode": "A", "eps": 0.01, "method": "ltt", "beta": 0.1, "overrun": 0.00375, "trunc": 0.0, "complete": 0.94005, "util": 0.6704914295000001, "steps": 5.715, "big": 0.3127821522309711}
+{"scenario": "valid", "mode": "B", "eps": 0.1, "method": "estimate", "overrun": 0.0, "trunc": 0.1355, "complete": 0.88815, "util": 0.8105744338749999, "steps": 5.1343, "big": 0.4455816761778626}
+{"scenario": "valid", "mode": "B", "eps": 0.05, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.99985, "util": 0.21563310712499997, "steps": 6.6097, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.1, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.20901894, "steps": 6.5381, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.1, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.99985, "util": 0.21507780825000003, "steps": 6.58745, "big": 0.0}
+{"scenario": "broken", "mode": "A", "eps": 0.01, "method": "estimate", "overrun": 0.05255, "trunc": 0.0, "complete": 0.85855, "util": 0.87936382425, "steps": 5.02265, "big": 0.4517933760066897}
+{"scenario": "broken", "mode": "A", "eps": 0.01, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "broken", "mode": "A", "eps": 0.01, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.01, "method": "ltt", "beta": 0.01, "overrun": 0.0, "trunc": 0.0, "complete": 0.99995, "util": 0.21794860912499997, "steps": 6.6217, "big": 0.0}
+{"scenario": "broken", "mode": "A", "eps": 0.05, "method": "estimate", "overrun": 0.05255, "trunc": 0.0, "complete": 0.85855, "util": 0.87936382425, "steps": 5.02265, "big": 0.4517933760066897}
+{"scenario": "broken", "mode": "A", "eps": 0.05, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.1, "method": "ltt", "beta": 0.1, "overrun": 0.0, "trunc": 0.0526, "complete": 0.94005, "util": 0.6486789865, "steps": 5.715, "big": 0.3127821522309711}
+{"scenario": "broken", "mode": "A", "eps": 0.05, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.9998, "util": 0.224513154375, "steps": 6.5418, "big": 0.0}
+{"scenario": "broken", "mode": "A", "eps": 0.1, "method": "estimate", "overrun": 0.05255, "trunc": 0.0, "complete": 0.85855, "util": 0.87936382425, "steps": 5.02265, "big": 0.4517933760066897}
+{"scenario": "broken", "mode": "A", "eps": 0.1, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "valid", "mode": "B", "eps": 0.05, "method": "ltt", "beta": 0.05, "overrun": 0.0, "trunc": 0.03085, "complete": 0.96255, "util": 0.55824330025, "steps": 6.0164, "big": 0.2438252110896882}
+{"scenario": "broken", "mode": "A", "eps": 0.1, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.99895, "util": 0.22642094587499997, "steps": 6.55745, "big": 0.0}
+{"scenario": "broken", "mode": "B", "eps": 0.01, "method": "estimate", "overrun": 0.0, "trunc": 0.16665, "complete": 0.85855, "util": 0.8059810307500002, "steps": 5.02265, "big": 0.4517933760066897}
+{"scenario": "broken", "mode": "B", "eps": 0.01, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "broken", "mode": "A", "eps": 0.01, "method": "ltt", "beta": 0.1, "overrun": 0.00495, "trunc": 0.0, "complete": 0.92425, "util": 0.653883732125, "steps": 5.6879, "big": 0.29102129081031664}
+{"scenario": "broken", "mode": "B", "eps": 0.01, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "broken", "mode": "B", "eps": 0.05, "method": "estimate", "overrun": 0.0, "trunc": 0.16665, "complete": 0.85855, "util": 0.8059810307500002, "steps": 5.02265, "big": 0.4517933760066897}
+{"scenario": "broken", "mode": "B", "eps": 0.05, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "broken", "mode": "B", "eps": 0.05, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.9998, "util": 0.224513154375, "steps": 6.5418, "big": 0.0}
+{"scenario": "broken", "mode": "A", "eps": 0.05, "method": "ltt", "beta": 0.2, "overrun": 0.0265, "trunc": 0.0, "complete": 0.8765, "util": 0.8087995904999999, "steps": 5.14555, "big": 0.41013108414066524}
+{"scenario": "broken", "mode": "B", "eps": 0.1, "method": "estimate", "overrun": 0.0, "trunc": 0.16665, "complete": 0.85855, "util": 0.8059810307500002, "steps": 5.02265, "big": 0.4517933760066897}
+{"scenario": "broken", "mode": "A", "eps": 0.1, "method": "ltt", "beta": 0.5, "overrun": 0.0705, "trunc": 0.0, "complete": 0.8569, "util": 0.9012140106250002, "steps": 5.04585, "big": 0.45850550452351935}
+{"scenario": "broken", "mode": "B", "eps": 0.1, "method": "preflight", "overrun": 0.0, "trunc": 0.0, "complete": 1.0, "util": 0.218581479375, "steps": 6.45265, "big": 0.0}
+{"scenario": "broken", "mode": "B", "eps": 0.1, "method": "calibrated", "overrun": 0.0, "trunc": 0.0, "complete": 0.99895, "util": 0.22642094587499997, "steps": 6.55745, "big": 0.0}
+{"scenario": "broken", "mode": "B", "eps": 0.05, "method": "ltt", "beta": 0.05, "overrun": 0.0, "trunc": 0.0379, "complete": 0.9557, "util": 0.47901233175, "steps": 6.0686, "big": 0.18281811290907293}
+{"scenario": "broken", "mode": "B", "eps": 0.01, "method": "ltt", "beta": 0.02, "overrun": 0.0, "trunc": 0.00015, "complete": 0.99905, "util": 0.23149727137500004, "steps": 6.6216, "big": 0.0}
+{"scenario": "broken", "mode": "B", "eps": 0.1, "method": "ltt", "beta": 0.1, "overrun": 0.0, "trunc": 0.0666, "complete": 0.92425, "util": 0.617994183125, "steps": 5.6879, "big": 0.29102129081031664}
