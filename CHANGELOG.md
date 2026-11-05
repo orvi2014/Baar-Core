@@ -2,7 +2,7 @@
 
 All notable changes to baar-core are documented here.
 
-## [Unreleased]
+## [0.11.0] — 2026-11-06
 
 ### Added
 - **`"calibrated"` output mode** — reserves the empirical (1 − β) quantile of logged
