@@ -2,7 +2,7 @@
 
 All notable changes to baar-core are documented here.
 
-## [Unreleased]
+## [0.12.1] — 2026-11-06
 
 ### Changed
 - `calibrate_early_stop` tests thresholds down to 0.1 (was 0.5). At loose budgets
