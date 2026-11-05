@@ -13,7 +13,7 @@
 \newtheorem{remark}{Remark}
 
 \title{How Often Will My Agent Overspend?\\
-Certifying Run-Level Budget Risk for LLM Agents}
+Certified Run-Level Budget Decisions for LLM Agents}
 \author{Robat Das\\
 Independent Researcher\\
 ORCID: \href{https://orcid.org/0009-0006-7792-8351}{0009-0006-7792-8351}}
@@ -45,11 +45,18 @@ splits, no setting showed a significant violation; the gain over a certified
 version of expected-cost reservation is small at $\varepsilon = 0.05$
 (1.07--1.25$\times$ as many finished runs) and large at tight tolerances
 (39--58\% versus 3--4\% at $\varepsilon = 0.01$). On 3{,}000 long-horizon
-coding-agent trajectories (OpenHands, SWE-rebench), no policy overspends; runs
-that cost more than the budget under any policy absorb 35--37\% of all spend at
-a 75th-percentile budget. A single ratio, the price of one maximum-length output
-relative to the run budget, predicts which regime an agent is in. The method
-ships in the open-source library Baar-Core.
+coding-agent trajectories (OpenHands, SWE-rebench), no policy overspends, but
+runs that cost more than the budget under any policy absorb 35--37\% of all
+spend at a 75th-percentile budget. For such agents we certify a second
+decision, stopping a run early, with the same theorem: a stopping rule
+certified to stop at most 5\% of the runs that would have solved their task
+within budget saved 14.5--23\% of all spend at the median and
+75th-percentile budgets, whereas an uncertified threshold
+stopped 17--40\% of the runs that would have finished. Deciding at the very
+start of a run was not possible with the features available there (AUC at
+most 0.63). A single ratio, the price of one maximum-length output relative to
+the run budget, predicts which decision matters for an agent. Both methods ship
+in the open-source library Baar-Core.
 \end{abstract}
 
 % ---------------------------------------------------------------------------
@@ -109,6 +116,12 @@ rarely matters (Section~\ref{sec:percall}).
   (Section~\ref{sec:hotpot}); and 3{,}000 real long-horizon coding-agent
   trajectories (Section~\ref{sec:swe}), where we find that overspending is not
   the binding risk at all.
+  \item \textbf{Certified early stopping.} For long-horizon agents, where
+  overspending is rare but runs that cannot finish absorb much of the budget, we
+  certify a rule that stops runs at checkpoints so that the probability of
+  stopping a run that would have succeeded within budget is at most
+  $\varepsilon$, and evaluate it on the coding-agent trajectories
+  (Section~\ref{sec:early}).
   \item \textbf{Software.} The method is the \texttt{calibrated} mode of the
   open-source library Baar-Core (v0.11.0). The real-model study also exposed a
   prompt-counting bug in the library, now fixed (Section~\ref{sec:impl}).
@@ -147,7 +160,12 @@ sequentially arriving data \citep{hultberg2026anytime}; ToolChain-CRC applies
 trajectory-level risk control to agent correctness under drift
 \citep{opoku2026toolchaincrc}; DAPRO \citep{feldman2026spend} allocates
 evaluation compute across multi-turn interactions, meeting its budget in
-expectation. The scenario approach \citep{campi2008exact} gives related
+expectation. Learn-then-Test has been used to calibrate early exit inside a single
+generation \citep{schuster2022calm}; BAGEN trains agents to stop early on
+trajectories that are unlikely to succeed, saving 28--64\% of tokens on failed
+trajectories, without a guarantee on the successful runs it stops
+\citep{lin2026bagen}. We certify the stopping rule of a whole agent run. The
+scenario approach \citep{campi2008exact} gives related
 finite-sample guarantees for decisions chosen from sampled constraints, and
 constrained MDPs \citep{altman1999cmdp} formalise expected-cost constraints in
 sequential decisions. Our setting is a chance constraint on a run's total cost
@@ -585,10 +603,117 @@ reservation policy adds at most 3.2 points to the share refused (50--53\% at the
 median budget, 25--27\% at the 75th percentile, 10--11\% at the 90th). What the
 budget does not show is how much is spent on those runs before they are
 stopped: 58--61\% of all spend at the median budget, 35--37\% at the 75th
-percentile and 18--19\% at the 90th. A run-level decision at the \emph{start}
-of a run, to admit it or not, could save that spend if run cost can be
-predicted; that is a different policy family, and the certification of
-Section~\ref{sec:method} applies to it unchanged.
+percentile and 18--19\% at the 90th. Stopping such runs early, or not starting them, is a
+different decision; Section~\ref{sec:early} certifies it with the same
+theorem.
+
+% ---------------------------------------------------------------------------
+\section{Certified early stopping}\label{sec:early}
+
+The coding-agent runs show that, for long-horizon agents, the money a budget
+wastes goes into runs that cannot finish within it. The certification of
+Section~\ref{sec:method} applies to any fixed family of policies with a
+zero-risk fallback, so we use it for a second decision: whether to continue a
+run.
+
+\paragraph{Policy family.}
+At checkpoints $k \in \{0, 5, 10, 15, 20, 30, 40, 50, 60, 80\}$ (completed
+calls; $k = 0$ is the start of the run), a score $s_k \in [0,1]$ estimates the
+probability that the run's total cost will exceed $B$. Policy $\pi_\tau$ stops
+the run at the first checkpoint with $s_k \ge \tau$. The scores come from one
+logistic regression per checkpoint, fitted on a training split that is
+disjoint from calibration, on what the controller has seen so far: the size of
+the first prompt, spend, context size and output lengths, and counts of the
+agent's actions (shell commands, file edits and views, test runs, tool outputs
+containing errors, repeated identical commands). The family is
+$\tau \in \{0.999, 0.995, \dots, 0.5\}$ (14 levels), tested from the most
+conservative; the fallback never stops, so Assumption~\ref{ass:fallback} holds
+trivially.
+
+\paragraph{Harm and benefit.}
+The loss is 1 if the policy stops a run that would have \emph{solved} the task
+within the budget (the run is resolved and its cost is at most $B$), or, in a
+second variant, a run that would have \emph{finished} within the budget.
+Theorem~\ref{thm:main} then bounds the probability, over calibration, that the
+deployed rule's harm rate exceeds $\varepsilon$. The benefit is the share of
+all spend saved, relative to a controller that lets every run continue until
+the budget stops it (we take its spend on a run as $\min(\text{cost}, B)$,
+which matches the replayed admission rule to within 3 points of runs refused,
+Section~\ref{sec:swe}). Stopping a run never changes its earlier steps, so the
+logged runs replay exactly and one calibration batch serves every $\tau$. We use
+200 random splits (25\% training and budget, 37.5\% calibration, 37.5\%
+held out), budgets at the 50th, 75th and 90th percentile of training-split
+cost, and $\delta = 0.05$.
+
+\begin{table}[t]
+\centering
+\caption{Certified early stopping on the coding-agent trajectories, held-out
+results over 200 splits (\%). Harm: share of held-out runs stopped although
+they would have solved (or finished) within $B$; p95 over splits; sig.: share of
+splits where the held-out harm rate is significantly above $\varepsilon$.
+Saved: share of all spend saved. Doomed stopped: share of runs costing more
+than $B$ that were stopped early. The uncertified row stops whenever the score
+reaches 0.5; its harm is shown for finishing / solving runs.}
+\label{tab:early}
+\small
+\begin{tabular}{llrrrrrr}
+\toprule
+$B$ & harm counted for & $\varepsilon$ & harm & harm p95 & sig. & saved & doomed stopped \\
+\midrule
+\csname @@input\endcsname tables/early_stop.tex
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Left: how well each checkpoint's features predict that a run will
+cost more than $B$ (held-out AUC, 75th-percentile budget, 20 splits), and the
+spend an oracle would save by stopping every such run at that checkpoint.
+Right: spend saved by the certified rule ($\varepsilon = 0.05$, solving runs)
+with each feature set.}
+\label{tab:auc}
+\small
+\begin{tabular}{rrrrr}
+\toprule
+$k$ & base & +behaviour & +repository & oracle saving \\
+\midrule
+\csname @@input\endcsname tables/early_auc.tex
+\bottomrule
+\end{tabular}
+\hspace{1.5em}
+\begin{tabular}{lrrr}
+\toprule
+$B$ & base & +behaviour & +repository \\
+\midrule
+\csname @@input\endcsname tables/early_features.tex
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Results.}
+The guarantee held: the mean held-out harm rate was below $\varepsilon$ in every
+setting, its 95th percentile over splits was at most 0.1 points above $\varepsilon$, and
+at most 1\% of splits showed a significantly higher rate, within the test's own
+false-alarm rate (Table~\ref{tab:early}). At $\varepsilon = 0.05$ for solving
+runs, the certified rule saved 23\% of all spend at the median budget, 14.5\%
+at the 75th percentile and 8\% at the 90th, stopping 75--85\% of the runs that
+could not finish within budget. Certification is what makes this safe: an
+uncertified rule that stops whenever the predicted probability reaches 0.5
+saves more but stops 40\%, 17\% and 5\% of the runs that would have finished.
+
+The savings are bounded by when a run's fate becomes predictable
+(Table~\ref{tab:auc}). At the start of a run, the only signals are the task's
+prompt and its repository, and they barely predict cost: AUC 0.55, or 0.61 with
+a repository prior fitted on the training split. An oracle that stopped every
+doomed run at the start would save 35\% of spend at the 75th-percentile
+budget, but no rule built on these features can come close. Prediction becomes
+useful after 15--30 calls (AUC 0.65--0.77 with behaviour counts), by which time
+the oracle ceiling has fallen to 27--33\%. Behaviour counts add 3--7 points of
+saving over cost features alone; the repository prior helps at the start but
+not later. Certified start-of-run admission therefore needs better predictors
+of task cost than the ones available in these logs; the certification itself
+carries over unchanged.
 
 % ---------------------------------------------------------------------------
 \section{Implementation}\label{sec:impl}
@@ -613,6 +738,23 @@ chooses that level at the run level. The HotpotQA study exposed that the
 library's prompt counter ignored tool schemas, which providers bill as prompt
 tokens, and that its OpenAI-compatible proxy dropped tool definitions; both are
 fixed in 0.11.0.
+
+Certified early stopping (Section~\ref{sec:early}) is part of Baar-Core 0.12.0.
+\texttt{fit\_early\_stop} fits the per-checkpoint models on logged runs,
+\texttt{calibrate\_early\_stop} certifies the threshold by replaying
+calibration runs, and the router checks the policy before every call, ending
+the run with a \texttt{RunStopped} exception before any request is sent.
+Integrations report behaviour with \texttt{record\_event} (for example a tool
+error).
+\begin{verbatim}
+policy = fit_early_stop(train_runs, budget=5.0, counter_keys=keys)
+policy = calibrate_early_stop(policy, calib_runs, eps=0.05, delta=0.05,
+                              harm="resolve")
+router = BAARRouter(budget=5.0, early_stop=policy)
+\end{verbatim}
+The library is dependency-free; on the coding-agent data its features are
+identical to those of the analysis code and its fitted models agree with it to
+within $10^{-11}$.
 
 % ---------------------------------------------------------------------------
 \section{Limitations}
@@ -642,11 +784,14 @@ fixed in 0.11.0.
   family.
   \item \textbf{Mode B} assumes exact prompt counts; with an under-counting
   estimator the backstop \texttt{max\_tokens} can still let a call overrun.
-  \item \textbf{Completion is not controlled.} Certified policies can refuse
-  more runs than expected-cost reservation. For long-horizon agents, spend on
-  runs that are stopped mid-task is the dominant cost (Section~\ref{sec:swe});
-  certifying a start-of-run admission policy, or the loss ``overrun or
-  incomplete'', uses the same theorem and is the natural next step.
+  \item \textbf{Early stopping depends on its predictor.} The certificate
+  holds for any predictor fitted on separate data, but the saving does not:
+  with the features in these logs, runs become predictable only after 15--30
+  calls, and start-of-run admission is not possible. The stopping rule was
+  evaluated on one agent and one model's trajectories, re-priced.
+  \item \textbf{Completion under output reservation is not controlled.}
+  Certified reservation policies can refuse more runs than expected-cost
+  reservation; the loss ``overrun or incomplete'' would control both.
 \end{itemize}
 
 % ---------------------------------------------------------------------------
@@ -662,9 +807,11 @@ worst-case reservation and per-step bounds forfeit; when it is a small share,
 overspending is rare under any policy. And the tolerance decides how much the
 run-level search adds over simply certifying expected-cost reservation: little
 at $\varepsilon = 0.05$ on our real workload, a great deal at
-$\varepsilon \le 0.02$. For long-horizon agents the budget's main cost is runs
-stopped before they finish, which calls for certified decisions at the start of
-a run.
+$\varepsilon \le 0.02$. For long-horizon agents the budget's main cost is runs that
+cannot finish within it, and the same certification lets an operator stop them
+early with a guaranteed bound on how often a run that would have succeeded is
+stopped; on real coding-agent runs this saved 8--23\% of spend at
+$\varepsilon = 0.05$.
 
 \paragraph{Reproducibility.} All code, logged runs and analysis outputs are in
 the \texttt{research/} directory of \url{https://github.com/orvi2014/Baar-Core}
@@ -672,7 +819,7 @@ at commit
 \begin{center}
 \small\href{https://github.com/orvi2014/Baar-Core/tree/f70d9fcdd38e2305c6a80fc8499c5af721140465/research}{\texttt{f70d9fcdd38e2305c6a80fc8499c5af721140465}}
 \end{center}
-and the library method is in release v0.11.0. Every table is generated from the
+and the library methods are in releases v0.11.0 and v0.12.0. Every table is generated from the
 analysis outputs by \texttt{research/sim/make\_tex.py}.
 
 \paragraph{AI usage.} Generative AI tools (Claude Opus and Claude Sonnet,

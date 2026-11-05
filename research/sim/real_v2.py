@@ -60,7 +60,7 @@ def load(path, prompt_add=0):
             st = [dict(s, prompt_tokens=s["prompt_tokens"] + prompt_add,
                        est_prompt_tokens=s["est_prompt_tokens"] + prompt_add,
                        cost=s["cost"] + pin * prompt_add) for s in st]
-        out.append(dict(model=r["model"], f1=float(r.get("f1", 0.0)), finished=bool(r["finished"]),
+        out.append(dict(run=rid, model=r["model"], f1=float(r.get("f1", 0.0)), finished=bool(r["finished"]),
                         cost=sum(s["cost"] for s in st), steps=st))
     return out
 
