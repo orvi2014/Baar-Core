@@ -23,6 +23,7 @@ Install:
 
 from __future__ import annotations
 
+import json
 import uuid
 import warnings
 from typing import Any, Dict, Iterator, List, Optional, Sequence
@@ -66,6 +67,37 @@ def _messages_to_dicts(messages: Sequence[BaseMessage]) -> List[Dict[str, str]]:
         content = m.content if isinstance(m.content, str) else str(m.content)
         result.append({"role": role, "content": content})
     return result
+
+
+def _messages_for_count(messages: Sequence[BaseMessage]) -> List[Dict[str, Any]]:
+    """OpenAI-style dicts for token counting, keeping tool calls and tool ids."""
+    out = []
+    for d, m in zip(_messages_to_dicts(messages), messages):
+        tool_calls = getattr(m, "tool_calls", None)
+        if tool_calls:
+            d["tool_calls"] = [
+                {
+                    "id": tc.get("id") or "",
+                    "type": "function",
+                    "function": {
+                        "name": tc.get("name", ""),
+                        "arguments": json.dumps(tc.get("args", {}), default=str),
+                    },
+                }
+                for tc in tool_calls
+            ]
+        tool_call_id = getattr(m, "tool_call_id", None)
+        if tool_call_id:
+            d["tool_call_id"] = tool_call_id
+        out.append(d)
+    return out
+
+
+def _bound_tools(kwargs: Dict[str, Any]) -> Optional[List[Any]]:
+    """Tool schemas bound to the model (bind_tools), as LangChain reports them."""
+    params = kwargs.get("invocation_params") or {}
+    tools = params.get("tools") or params.get("functions")
+    return tools or None
 
 
 def _last_human_content(messages: Sequence[BaseMessage]) -> str:
@@ -153,8 +185,16 @@ class BaarCallbackHandler(BaseCallbackHandler):
 
     # ── pre-flight ─────────────────────────────────────────────────────────────
 
-    def _preflight(self, model: str, text: str) -> float:
-        prompt_tokens = token_counter(text=text, model=model)
+    def _preflight(
+        self,
+        model: str,
+        text: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Any]] = None,
+    ) -> float:
+        # Count the request as the provider bills it: full message list (with
+        # per-message overhead and tool calls) plus any bound tool schemas.
+        prompt_tokens = token_counter(text=text, model=model, messages=messages, tools=tools)
         estimated = self._router._tracker.estimate_cost(model, prompt_tokens)
         # Use check_and_reserve (atomic check + deduct) rather than check_affordability
         # (read-only). Under concurrent async LangChain calls, two preflights can both
@@ -182,7 +222,9 @@ class BaarCallbackHandler(BaseCallbackHandler):
     ) -> None:
         model = _extract_model(serialized, kwargs)
         self._pending_models[run_id] = model
-        self._pending_reservations[run_id] = self._preflight(model, " ".join(prompts))
+        self._pending_reservations[run_id] = self._preflight(
+            model, " ".join(prompts), tools=_bound_tools(kwargs)
+        )
 
     def on_chat_model_start(
         self,
@@ -194,13 +236,13 @@ class BaarCallbackHandler(BaseCallbackHandler):
     ) -> None:
         model = _extract_model(serialized, kwargs)
         self._pending_models[run_id] = model
-        # Convert all content to str — skipping non-string content (tool results,
-        # multi-modal payloads) silently underestimates tokens for agent chains.
-        flat_text = " ".join(
-            m.content if isinstance(m.content, str) else str(m.content)
-            for batch in messages for m in batch
+        # Count every message, including non-string content (tool results,
+        # multi-modal payloads) and assistant tool calls, plus the tool schemas
+        # bound with bind_tools() — the provider bills all of them as prompt.
+        count_msgs = [d for batch in messages for d in _messages_for_count(batch)]
+        self._pending_reservations[run_id] = self._preflight(
+            model, messages=count_msgs, tools=_bound_tools(kwargs)
         )
-        self._pending_reservations[run_id] = self._preflight(model, flat_text)
 
     # ── post-call spend recording ──────────────────────────────────────────────
 

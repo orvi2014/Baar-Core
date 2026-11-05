@@ -20,6 +20,7 @@ from typing import AsyncGenerator, AsyncIterator, Callable, Iterator, List, Opti
 from baar.core.router import Router, ModelTier
 from baar.core import caps
 from baar.core.lengths import OutputLengths
+from baar.calibration import resolve_beta
 from baar.core.awareness import BudgetStatus, WindDown, add_note, DEFAULT_WRAP_UP
 from baar.core.cache import cached_tokens
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
@@ -69,7 +70,7 @@ def _is_retryable(exc: Exception) -> bool:
     return bool(_LITELLM_RETRYABLE) and isinstance(exc, _LITELLM_RETRYABLE)
 
 
-def token_counter(text: str = "", model: str = "gpt-4o", messages=None) -> int:
+def token_counter(text: str = "", model: str = "gpt-4o", messages=None, tools=None) -> int:
     """
     Estimate token count for a task or message list.
     Used for pre-flight budget checks (BCD).
@@ -79,15 +80,56 @@ def token_counter(text: str = "", model: str = "gpt-4o", messages=None) -> int:
         model:    LiteLLM model name for tokenizer selection.
         messages: Optional list of message dicts. When provided, counts tokens
                   for the entire message list instead of plain text.
+        tools:    Optional OpenAI-style tool/function definitions sent with the
+                  request. Providers bill them as prompt tokens; omitting them
+                  under-counts every tool-using call (about 37 tokens for one
+                  small schema on OpenAI).
     """
+    if tools and messages is None:
+        messages = [{"role": "user", "content": text}]
     try:
         if messages is not None:
+            if tools:
+                try:
+                    return litellm.token_counter(model=model, messages=messages, tools=tools)
+                except TypeError:  # litellm without tools= support
+                    return (litellm.token_counter(model=model, messages=messages)
+                            + _approx_tool_tokens(tools))
             return litellm.token_counter(model=model, messages=messages)
         return litellm.token_counter(model=model, text=text)
     except Exception:
         if messages is not None:
-            return sum(len(m.get("content", "")) // 4 for m in messages)
+            n = sum(len(str(m.get("content") or "")) // 4 for m in messages)
+            return max(1, n + _approx_tool_tokens(tools))
         return max(1, len(text) // 4)
+
+
+def _approx_tool_tokens(tools) -> int:
+    """Rough fallback: ~4 characters per token over the serialized schemas."""
+    if not tools:
+        return 0
+    return len(json.dumps(tools, default=str)) // 4
+
+
+def _tools_kw(tools) -> dict:
+    """``tools=`` for token_counter only when there are tools (keeps patched counters working)."""
+    return {"tools": tools} if tools else {}
+
+
+def _no_tools_in_continue(tools) -> None:
+    if tools:
+        raise ValueError('tools are not supported with on_output_overrun="continue"')
+
+
+def _with_tools(params: Optional[dict], tools: Optional[list], tool_choice: Any) -> Optional[dict]:
+    """Provider kwargs for one call: the plan's params plus tools / tool_choice, if any."""
+    if not tools:
+        return params
+    extra = dict(params or {})
+    extra["tools"] = tools
+    if tool_choice is not None:
+        extra["tool_choice"] = tool_choice
+    return extra
 
 
 # ── Version guard ──────────────────────────────────────────────────────────────
@@ -287,6 +329,8 @@ class BAARConfig:
     thinking_budget: Optional[int] = None  # cap on hidden reasoning tokens (reasoning models only)
     overrun_risk: float = 0.0  # "preflight": reserve the learned (1 - risk) output length, not the worst case
     output_lengths: Optional[Any] = None  # Optional[OutputLengths]; share to pool learned lengths
+    output_quantiles: Optional[Any] = None  # baar.calibration.QuantileTable, for "calibrated"
+    calibration_beta: Optional[Any] = None  # float or baar.calibration.CalibrationResult, for "calibrated"
     segment_tokens: int = 2000  # "continue": output tokens per segment
     max_segments: int = 8  # "continue": most segments for one answer
     budget_awareness: Any = False  # True, or Callable[[BudgetStatus], str]: add a status line to each call
@@ -376,6 +420,8 @@ class BAARRouter:
         thinking_budget: Optional[int] = None,
         overrun_risk: float = 0.0,
         output_lengths: Optional[OutputLengths] = None,
+        output_quantiles: Optional[Any] = None,
+        calibration_beta: Optional[Any] = None,
         segment_tokens: int = 2000,
         max_segments: int = 8,
         budget_awareness: Any = False,
@@ -422,6 +468,8 @@ class BAARRouter:
             thinking_budget=thinking_budget,
             overrun_risk=overrun_risk,
             output_lengths=output_lengths,
+            output_quantiles=output_quantiles,
+            calibration_beta=calibration_beta,
             segment_tokens=segment_tokens,
             max_segments=max_segments,
             budget_awareness=budget_awareness,
@@ -465,6 +513,13 @@ class BAARRouter:
         self._prompt_margin = float(config.prompt_margin)
         self._thinking_budget = config.thinking_budget
         self._overrun_risk = float(config.overrun_risk)
+        self._output_quantiles = config.output_quantiles
+        self._calibration_beta = resolve_beta(config.calibration_beta)
+        self._calibration_configured = (
+            config.output_quantiles is not None and config.calibration_beta is not None
+        )
+        if config.on_output_overrun == "calibrated":
+            self._require_calibration()
         self._segment_tokens = int(config.segment_tokens)
         self._max_segments = int(config.max_segments)
         self._budget_awareness = config.budget_awareness
@@ -641,6 +696,8 @@ class BAARRouter:
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
     ) -> str:
         """
         Execute a single routed chat call with hard financial guardrails.
@@ -649,11 +706,39 @@ class BAARRouter:
         of ``segment_tokens`` (see _chat_continue). Otherwise it is one call.
         """
         if self._resolve_mode(on_output_overrun) == "continue":
+            _no_tools_in_continue(tools)
             return self._chat_continue(task, messages, context, max_output_tokens, thinking_budget)
         return self._chat_step(
             task, messages=messages, context=context, on_output_overrun=on_output_overrun,
             max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+            tools=tools, tool_choice=tool_choice,
         ).response_text
+
+    def complete(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ):
+        """
+        Same guardrails as ``chat()``, but returns the provider's full response
+        (a LiteLLM ``ModelResponse``), including ``tool_calls`` and ``finish_reason``.
+        Not available with on_output_overrun="continue".
+        """
+        if self._resolve_mode(on_output_overrun) == "continue":
+            raise ValueError('complete() returns one response; on_output_overrun="continue" is not supported')
+        _, response = self._chat_step(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+            tools=tools, tool_choice=tool_choice, _with_response=True,
+        )
+        return response
 
     def _chat_step(
         self,
@@ -664,6 +749,9 @@ class BAARRouter:
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+        _with_response: bool = False,
     ) -> StepResult:
         """
         Execute a single routed chat call with hard financial guardrails.
@@ -685,7 +773,7 @@ class BAARRouter:
 
         def tc(model: str) -> int:
             if model not in _tc_cache:
-                _tc_cache[model] = token_counter(messages=msgs, model=model)
+                _tc_cache[model] = token_counter(messages=msgs, model=model, **_tools_kw(tools))
             return _tc_cache[model]
 
         mode, limit, thinking = self._resolve_output_opts(on_output_overrun, max_output_tokens, thinking_budget)
@@ -820,7 +908,7 @@ class BAARRouter:
                 try:
                     response = _sync_completion_with_retry(
                         candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens,
-                        extra=plan.params,
+                        extra=_with_tools(plan.params, tools, tool_choice),
                     )
                     model_to_use = candidate
                     break
@@ -869,7 +957,7 @@ class BAARRouter:
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
         if final:
             self._final_answer = step_result.response_text
-        return step_result
+        return (step_result, response) if _with_response else step_result
 
     def stream_chat(
         self,
@@ -1183,15 +1271,41 @@ class BAARRouter:
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
     ) -> str:
         """Async chat() — same guardrails, including on_output_overrun="continue"."""
         if self._resolve_mode(on_output_overrun) == "continue":
+            _no_tools_in_continue(tools)
             return await self._achat_continue(task, messages, context, max_output_tokens, thinking_budget)
         step = await self._achat_step(
             task, messages=messages, context=context, on_output_overrun=on_output_overrun,
             max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+            tools=tools, tool_choice=tool_choice,
         )
         return step.response_text
+
+    async def acomplete(
+        self,
+        task: str,
+        *,
+        messages: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
+        on_output_overrun: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+    ):
+        """Async complete(): full provider response, including tool calls."""
+        if self._resolve_mode(on_output_overrun) == "continue":
+            raise ValueError('acomplete() returns one response; on_output_overrun="continue" is not supported')
+        _, response = await self._achat_step(
+            task, messages=messages, context=context, on_output_overrun=on_output_overrun,
+            max_output_tokens=max_output_tokens, thinking_budget=thinking_budget,
+            tools=tools, tool_choice=tool_choice, _with_response=True,
+        )
+        return response
 
     async def _achat_step(
         self,
@@ -1202,6 +1316,9 @@ class BAARRouter:
         on_output_overrun: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         thinking_budget: Optional[int] = None,
+        tools: Optional[List[dict]] = None,
+        tool_choice: Any = None,
+        _with_response: bool = False,
     ) -> StepResult:
         """
         Async version of chat() — identical hard financial guardrails,
@@ -1218,7 +1335,7 @@ class BAARRouter:
 
         def tc(model: str) -> int:
             if model not in _tc_cache:
-                _tc_cache[model] = token_counter(messages=msgs, model=model)
+                _tc_cache[model] = token_counter(messages=msgs, model=model, **_tools_kw(tools))
             return _tc_cache[model]
 
         mode, limit, thinking = self._resolve_output_opts(on_output_overrun, max_output_tokens, thinking_budget)
@@ -1353,7 +1470,7 @@ class BAARRouter:
                 try:
                     response = await _async_completion_with_retry(
                         candidate, msgs, timeout=self._call_timeout, max_tokens=plan.max_tokens,
-                        extra=plan.params,
+                        extra=_with_tools(plan.params, tools, tool_choice),
                     )
                     model_to_use = candidate
                     break
@@ -1402,7 +1519,7 @@ class BAARRouter:
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
         if final:
             self._final_answer = step_result.response_text
-        return step_result
+        return (step_result, response) if _with_response else step_result
 
     async def astream_chat(
         self,
@@ -2169,6 +2286,8 @@ class BAARRouter:
         """Per-call overrides win over router config. Returns (mode, max_output_tokens, thinking_budget)."""
         mode = on_output_overrun if on_output_overrun is not None else self._on_output_overrun
         caps.validate_mode(mode)
+        if mode == "calibrated":
+            self._require_calibration()
         limit = max_output_tokens if max_output_tokens is not None else self._max_output_tokens
         if limit is not None and limit < 1:
             raise ValueError("max_output_tokens must be a positive integer or None")
@@ -2225,11 +2344,24 @@ class BAARRouter:
             max_call_share=self._max_call_share,
             prompt_margin=self._prompt_margin,
             thinking_budget=thinking,
-            predicted_tokens=(
-                self._output_lengths.quantile(model, self._overrun_risk)
-                if mode == "preflight" and self._overrun_risk > 0 else None
-            ),
+            predicted_tokens=self._predicted_tokens(model, mode),
         )
+
+    def _predicted_tokens(self, model: str, mode: str) -> Optional[int]:
+        """Learned output length that "preflight" / "calibrated" reserve instead of the worst case."""
+        if mode == "calibrated":
+            # Run-level calibrated quantile; None (nothing certified) reserves the worst case.
+            return self._output_quantiles.bound(model, "any", self._calibration_beta)
+        if mode == "preflight" and self._overrun_risk > 0:
+            return self._output_lengths.quantile(model, self._overrun_risk)
+        return None
+
+    def _require_calibration(self) -> None:
+        if not self._calibration_configured:
+            raise ValueError(
+                "on_output_overrun='calibrated' needs output_quantiles (a QuantileTable) and "
+                "calibration_beta (a float, or the CalibrationResult from ltt_select) on the router"
+            )
 
     def _expected_tokens(
         self, tc, eot: int, limit: Optional[int], thinking: Optional[int] = None

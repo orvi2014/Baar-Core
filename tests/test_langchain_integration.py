@@ -330,10 +330,11 @@ class TestRunIdTracking:
                 [[human_msg, tool_msg]],
                 run_id=make_run_id(),
             )
-            # token_counter must have been called with a string that includes
+            # token_counter must have been called with messages that include
             # the non-string tool message content (converted via str()).
-            called_text = mock_tc.call_args[1]["text"]
-            assert "result" in called_text or "42" in called_text
+            called = mock_tc.call_args[1]["messages"]
+            assert any("42" in m["content"] for m in called)
+            assert any(m.get("tool_call_id") == "call_1" for m in called)
 
 
 # ── BaarChatModel — Bug 3: _astream must be implemented ──────────────────────
@@ -420,3 +421,83 @@ class TestBaarChatModel:
             result = await llm._agenerate([HumanMessage(content="ping")])
             mock_achat.assert_called_once()
             assert result.generations[0].message.content == "pong"
+
+
+# ── Prompt token count must include bound tools and message structure ────────
+
+_TOOLS = [{
+    "type": "function",
+    "function": {
+        "name": "lookup",
+        "description": "Return the paragraph for an article title from the list.",
+        "parameters": {"type": "object", "properties": {"title": {"type": "string"}},
+                       "required": ["title"]},
+    },
+}]
+
+
+class TestToolAwarePreflight:
+    def test_chat_start_counts_bound_tools(self):
+        handler = BaarCallbackHandler(make_router(budget=10.0))
+        with patch("baar.integrations.langchain.token_counter") as mock_tc:
+            mock_tc.return_value = 10
+            handler.on_chat_model_start(
+                {"kwargs": {"model_name": "gpt-4o-mini"}},
+                [[HumanMessage(content="hi")]],
+                run_id=make_run_id(),
+                invocation_params={"tools": _TOOLS},
+            )
+            assert mock_tc.call_args[1]["tools"] == _TOOLS
+
+    def test_chat_start_without_tools_passes_none(self):
+        handler = BaarCallbackHandler(make_router(budget=10.0))
+        with patch("baar.integrations.langchain.token_counter") as mock_tc:
+            mock_tc.return_value = 10
+            handler.on_chat_model_start(
+                {"kwargs": {"model_name": "gpt-4o-mini"}},
+                [[HumanMessage(content="hi")]],
+                run_id=make_run_id(),
+            )
+            assert mock_tc.call_args[1]["tools"] is None
+
+    def test_chat_start_keeps_assistant_tool_calls(self):
+        handler = BaarCallbackHandler(make_router(budget=10.0))
+        ai = AIMessage(content="", tool_calls=[{"id": "c1", "name": "lookup", "args": {"title": "X"}}])
+        with patch("baar.integrations.langchain.token_counter") as mock_tc:
+            mock_tc.return_value = 10
+            handler.on_chat_model_start(
+                {"kwargs": {"model_name": "gpt-4o-mini"}},
+                [[HumanMessage(content="hi"), ai]],
+                run_id=make_run_id(),
+            )
+            msgs = mock_tc.call_args[1]["messages"]
+            assert msgs[1]["tool_calls"][0]["function"]["name"] == "lookup"
+            assert '"title"' in msgs[1]["tool_calls"][0]["function"]["arguments"]
+
+    def test_llm_start_counts_bound_tools(self):
+        handler = BaarCallbackHandler(make_router(budget=10.0))
+        with patch("baar.integrations.langchain.token_counter") as mock_tc:
+            mock_tc.return_value = 10
+            handler.on_llm_start(
+                {"kwargs": {"model_name": "gpt-4o-mini"}}, ["hi"],
+                run_id=make_run_id(), invocation_params={"tools": _TOOLS},
+            )
+            assert mock_tc.call_args[1]["tools"] == _TOOLS
+
+    def test_end_to_end_bind_tools_reaches_counter(self):
+        # A real LangChain chat model with tools bound: LangChain itself must hand
+        # the schemas to the callback, and the reservation must grow accordingly.
+        from langchain_core.language_models.fake_chat_models import FakeListChatModel
+        router = make_router(budget=10.0)
+        handler = BaarCallbackHandler(router)
+        seen = {}
+
+        def spy(**kw):
+            seen.update(kw)
+            from baar.router import token_counter as real
+            return real(**kw)
+
+        llm = FakeListChatModel(responses=["ok"]).bind(tools=_TOOLS)
+        with patch("baar.integrations.langchain.token_counter", side_effect=spy):
+            llm.invoke("What is the capital of France?", config={"callbacks": [handler]})
+        assert seen.get("tools") == _TOOLS
