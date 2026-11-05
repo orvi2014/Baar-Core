@@ -8,15 +8,25 @@ expected output ("estimate") or the worst case ("preflight"). A single scalar
 
 ``beta`` is chosen at the level of whole agent runs with fixed-sequence
 Learn-then-Test (Angelopoulos et al., 2021): candidate levels are tested in a
-fixed order, from conservative to aggressive, each on ``n`` fresh runs, with an
-exact binomial p-value. If the runs are i.i.d. draws from the deployment
+fixed order, from conservative to aggressive, each on ``n`` runs, with an exact
+binomial p-value. The same ``n`` runs may be used for every level: the guarantee
+only uses the failure count of one level at a time. For a controller that only
+admits or refuses calls, one batch of runs logged without a binding budget can
+be replayed under every level, so calibration costs ``n`` runs in total (see
+``calibrate_from_failures``). If the runs are i.i.d. draws from the deployment
 distribution, the selected level satisfies
 
     P( P(run fails) <= eps ) >= 1 - delta
 
 where "fails" is whatever loss you count (e.g. the run spent more than its
 budget). No assumption on output-length distributions is needed. If no level
-can be certified, the result is ``beta=None``, meaning: use "preflight".
+can be certified, the result is ``beta=None``, meaning: use "preflight". That
+fallback is itself risk-free only if each reservation covers the billed cost,
+i.e. prompt estimates (with the router's ``prompt_margin``) are not below the
+real prompt; if in doubt, refuse the run instead.
+
+Nothing can be certified with fewer than about ``ln(1/delta) / eps`` runs
+(299 for eps=0.01, delta=0.05): with zero failures the p-value is (1 - eps)^n.
 
 This module has no third-party dependencies.
 """
@@ -138,9 +148,10 @@ def ltt_select(
     Args:
         betas:  candidate levels, ordered from conservative to aggressive.
                 The order must be fixed before seeing any calibration data.
-        run_fn: ``run_fn(beta, n)`` executes ``n`` fresh i.i.d. runs under level
-                ``beta`` and returns how many failed.
-        n:      runs per level.
+        run_fn: ``run_fn(beta, n)`` returns how many of ``n`` i.i.d. runs fail under
+                level ``beta``. It may execute fresh runs, or replay the same
+                logged runs for every level (valid; see the module docstring).
+        n:      runs per level (the same runs may serve every level).
         eps:    target failure rate.
         delta:  allowed probability of certifying a level whose risk exceeds eps.
 
@@ -171,8 +182,10 @@ def calibrate_from_failures(
 ) -> CalibrationResult:
     """
     Learn-then-Test on failure counts you already have, one per level in
-    ``betas`` (same order). Each count must come from its own ``n`` runs at
-    that level. Counts after the first non-rejection are ignored.
+    ``betas`` (same order), each out of ``n`` i.i.d. runs. The counts may come
+    from the same runs replayed under every level, which is how calibration
+    costs only ``n`` runs for an admit/refuse controller. Counts after the first
+    non-rejection are ignored.
     """
     if len(failures) < 1 or len(failures) > len(betas):
         raise ValueError("failures must have between 1 and len(betas) entries")

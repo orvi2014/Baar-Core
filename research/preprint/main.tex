@@ -1,114 +1,117 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
-\usepackage{booktabs}
+\usepackage{booktabs,multirow}
+\usepackage{graphicx}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{hyperref}
-\usepackage{xcolor}
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{proposition}{Proposition}
-\newtheorem{definition}{Definition}
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
 
-\title{Bounding the Probability That an LLM Agent Exceeds Its Budget:\\
-Run-Level Risk Control with Learn-then-Test}
+\title{How Often Will My Agent Overspend?\\
+Certifying Run-Level Budget Risk for LLM Agents}
 \author{Robat Das\\
 Independent Researcher\\
 ORCID: \href{https://orcid.org/0009-0006-7792-8351}{0009-0006-7792-8351}}
-\date{DRAFT --- \today}
+\date{November 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-LLM agents are billed per token, and the cost of a run is not known until it
-ends: the number of steps, the model chosen at each step, and the length of
-every response are random. Operators therefore face a choice between reserving
-for the expected cost, which overruns the budget an uncontrolled fraction of the
-time, and reserving for the worst case, which is safe but so conservative that a
-capable model is almost never affordable. We ask for something in between: a
-controller whose probability of exceeding a run budget $B$ is at most a
-user-chosen $\varepsilon$. We first show why the natural approach fails.
-Bounding each step's output length with a conformal or binomial quantile and
-splitting $\varepsilon$ across steps is valid but, at realistic calibration
-sizes, collapses to worst-case reservation, because the union bound charges
-every step for a tail event that almost never causes a run-level overrun. We
-then calibrate the controller at the level of whole runs. A one-parameter
-family of reservation policies is tested in a fixed sequence with exact
-binomial $p$-values (Learn-then-Test), which yields
-$\Pr\bigl(\Pr(\text{spend} > B) \le \varepsilon\bigr) \ge 1-\delta$ from
-i.i.d.\ runs alone, with no assumption on per-step output distributions. In
-simulation the calibrated controller keeps overruns below $\varepsilon$ (in the
-no-truncation mode) while
-assigning 31--45\% of steps to the capable model, where per-step bounds and
-worst-case reservation assign none; across 500 independent calibrations the
-guarantee held in 499 (well-specified simulator) and 495 (misspecified
-simulator) cases at $\delta = 0.05$. The method is implemented in the
-open-source library Baar-Core. On 2{,}100 real gpt-4o-mini and gpt-4o agent
-runs on HotpotQA, replayed exactly under each policy, worst-case reservation
-finished no run; the calibrated policy matched expected-cost reservation's
-completion at looser budgets, traded some completion for fewer overruns at
-the tightest one, and its guarantee held in at least 499 of 500
-calibrations in every setting.
+A budget enforcer for an LLM agent must decide, before every call, whether the
+call is affordable, without knowing how long the response will be. Reserving the
+expected output gives no control over how often a run overspends; reserving the
+provider's maximum output never overspends but can make the capable model
+unaffordable. We study the guarantee in between: the probability that a whole
+run exceeds its budget is at most a user-chosen $\varepsilon$, with confidence
+$1-\delta$. We certify it by testing a family of reservation policies in a fixed
+sequence with exact binomial $p$-values (Learn-then-Test). The guarantee needs
+only i.i.d.\ runs; the same runs can serve every policy, so for admit/refuse
+controllers certification costs $n$ logged runs, and no fewer than about
+$\ln(1/\delta)/\varepsilon$. Per-call risk levels do not translate into run-level
+risk, and union-bound per-step control forfeits most of the capability the
+budget could buy. In a simulator where every policy's risk is known from
+400{,}000 or more fresh tasks, 320{,}000 calibrations across 40 settings
+selected a policy with risk above $\varepsilon$ in 0.4--0.8\% of cases per
+calibration size, and in at most 5.3\% (95\% CI 4.4--6.4\%) in any setting,
+consistent with $\delta = 5\%$. On 2{,}100 real gpt-4o-mini and gpt-4o runs
+(HotpotQA), replayed exactly under the shipped admission rule with 200 held-out
+splits, no setting showed a significant violation; the gain over a certified
+version of expected-cost reservation is small at $\varepsilon = 0.05$
+(1.07--1.25$\times$ as many finished runs) and large at tight tolerances
+(39--58\% versus 3--4\% at $\varepsilon = 0.01$). On 3{,}000 long-horizon
+coding-agent trajectories (OpenHands, SWE-rebench), no policy overspends; runs
+that cost more than the budget under any policy absorb 35--37\% of all spend at
+a 75th-percentile budget. A single ratio, the price of one maximum-length output
+relative to the run budget, predicts which regime an agent is in. The method
+ships in the open-source library Baar-Core.
 \end{abstract}
 
 % ---------------------------------------------------------------------------
 \section{Introduction}
 
-An LLM agent alternates between model calls and tool calls until it produces
-an answer. Each model call costs
-$p^{\text{in}}_m n_t + p^{\text{out}}_m y_t$, where $m$ is the model, $n_t$ the
-prompt length (which grows as the conversation grows) and $y_t$ the output
-length. Only $n_t$ is known before the call. Measurement studies report that
-repeated runs of the same agentic task can differ by up to $30\times$ in total
-tokens, and that agents predict their own consumption poorly
-\citep{bai2026spend,lin2026bagen}. Unbounded consumption is listed among the
-top risks for LLM applications \citep{owasp2025llm10}, and practitioners have
-catalogued dozens of budget-overrun incidents in agent frameworks
-\citep{khan2026tokenbudgets}.
+An LLM agent alternates between model calls and tool calls until it produces an
+answer. A call to model $m$ costs $p^{\text{in}}_m n_t + p^{\text{out}}_m y_t$,
+where $n_t$ is the prompt length, which grows as the conversation grows, and
+$y_t$ the output length. Only $n_t$ is known before the call. Repeated runs of
+the same agentic task can differ by up to $30\times$ in tokens, and agents
+predict their own consumption poorly \citep{bai2026spend,lin2026bagen}.
+Unbounded consumption is a recognised risk for LLM applications
+\citep{owasp2025llm10}, and dozens of production overrun incidents have been
+catalogued in agent frameworks \citep{khan2026tokenbudgets}.
 
-A budget enforcer must decide, before each call, whether the call is
-affordable. To do so it must plan for an unknown output length. Two plans are
-common. Reserving the \emph{expected} output is permissive but gives no control
-over how often the budget is exceeded. Reserving the \emph{maximum} output the
-provider allows never exceeds the budget, but a capable model's maximum output
-is often priced close to the whole budget, so the enforcer rarely admits it.
-Neither plan lets the operator say how much risk they will accept.
-
-We study the following guarantee. Given a run budget $B$, a tolerance
-$\varepsilon$ and a confidence level $1-\delta$, deploy a controller $\pi$ such
-that, with probability at least $1-\delta$ over calibration,
+A budget enforcer decides, before each call, whether the call is affordable,
+and so must plan for an unknown output length. Reserving the \emph{expected}
+output is permissive but gives no control over how often a run overspends.
+Reserving the provider's \emph{maximum} output never overspends, but when one
+maximum-length output of the capable model costs a large share of the budget,
+that model is rarely admitted. We study the guarantee in between. Given a run
+budget $B$, a tolerance $\varepsilon$ and a confidence level $1-\delta$, deploy
+a controller $\pi$ such that, with probability at least $1-\delta$ over
+calibration,
 \begin{equation}\label{eq:goal}
-  R(\pi) \;=\; \Pr_{\text{task},\ \text{sampling}}\bigl(\text{run cost under } \pi > B\bigr) \;\le\; \varepsilon .
+  R(\pi) \;=\; \Pr_{\text{task},\,\text{sampling}}\bigl(\text{cost of a run under } \pi > B\bigr) \;\le\; \varepsilon .
 \end{equation}
-The controller is adaptive: it chooses models and admits or refuses calls based
-on the money already spent, so per-step observations are not exchangeable and
-standard per-call conformal guarantees do not compose directly into
-\eqref{eq:goal}.
+Two natural alternatives fall short. Calibrating each \emph{call}, so that a
+response exceeds its reservation with probability at most some level, is the
+approach of conformal cost gates \citep{valkanas2025c3po,besanson2026greensarc},
+but a per-call level says little about~\eqref{eq:goal}: whether a long response
+causes an overrun depends on how much budget is left, and a run contains many
+calls (Section~\ref{sec:percall}). Splitting $\varepsilon$ across the steps of a
+run with a union bound is valid but charges every step for a tail event that
+rarely matters (Section~\ref{sec:percall}).
 
 \paragraph{Contributions.}
 \begin{enumerate}
-  \item We formalize run-level budget risk for adaptive agent controllers in two
-  operating modes: one where responses are never cut off and the risk is
-  overrun, and one where a \texttt{max\_tokens} backstop prevents overrun and the
-  risk is truncation (Section~\ref{sec:setup}).
-  \item We show that per-step quantile bounds combined with a union bound or
-  risk spending are valid but degenerate to worst-case reservation at practical
-  calibration sizes, and explain why (Section~\ref{sec:perstep}).
-  \item We calibrate a one-parameter policy family at the run level with
-  Learn-then-Test \citep{angelopoulos2021ltt}, giving the guarantee
-  \eqref{eq:goal} from i.i.d.\ runs with no distributional assumption on output
-  lengths (Section~\ref{sec:method}). The statistical tool is not new; the
-  contribution is the formulation and the evidence that run-level calibration
-  is what makes the guarantee usable.
-  \item We evaluate in a simulator with heavy-tailed outputs, growing context
-  and adaptive routing, including a misspecified variant, and validate the
-  guarantee over 500 independent calibrations (Section~\ref{sec:sim}). We
-  then replay 2{,}100 real agent runs exactly under each policy
-  (Section~\ref{sec:real}).
-  \item We release the method as a reservation mode in the open-source
-  Baar-Core library.
+  \item \textbf{Run-level certification.} We certify~\eqref{eq:goal} by testing
+  a fixed family of reservation policies in sequence with exact binomial
+  $p$-values, an instance of Learn-then-Test \citep{angelopoulos2021ltt}. The
+  statistical tool is not new. We make explicit what the budget setting needs:
+  the guarantee holds with calibration runs shared across policies, so for
+  admit/refuse controllers one batch of logged runs can be replayed under
+  every policy; no policy can be certified with fewer than
+  $\ln(1/\delta)/\varepsilon$ runs; and the fallback policy must have zero
+  risk, which holds for worst-case reservation only if prompt counts are
+  upper bounds (Section~\ref{sec:method}).
+  \item \textbf{Why per-call and per-step control fall short}, with two
+  mechanisms, sample size and tail cost, and a characterisation of when output
+  reservation matters at all: the ratio $\kappa$ of one maximum-length output's
+  price to the run budget (Section~\ref{sec:percall}).
+  \item \textbf{Evaluation at three scales}: a simulator with 200{,}000-task
+  pools per setting, so that the risk of every selected policy is known
+  precisely (Section~\ref{sec:sim}); 2{,}100 real short-horizon runs replayed
+  exactly under the shipped controller with held-out splits
+  (Section~\ref{sec:hotpot}); and 3{,}000 real long-horizon coding-agent
+  trajectories (Section~\ref{sec:swe}), where we find that overspending is not
+  the binding risk at all.
+  \item \textbf{Software.} The method is the \texttt{calibrated} mode of the
+  open-source library Baar-Core (v0.11.0). The real-model study also exposed a
+  prompt-counting bug in the library, now fixed (Section~\ref{sec:impl}).
 \end{enumerate}
 
 % ---------------------------------------------------------------------------
@@ -116,444 +119,563 @@ standard per-call conformal guarantees do not compose directly into
 
 \paragraph{Cost-aware routing and cascades.}
 FrugalGPT \citep{chen2023frugalgpt} and RouteLLM \citep{ong2024routellm} trade
-cost against quality by choosing among models, evaluated by average cost.
-C3PO \citep{valkanas2025c3po} optimizes cascades under a probabilistic
-constraint on the cost of a \emph{single query}. Our constraint is on the total
-cost of a multi-step \emph{run} under an adaptive controller.
+cost against quality across models, evaluated by average cost. C3PO
+\citep{valkanas2025c3po} uses conformal prediction to bound the probability
+that the cost of answering \emph{one query} with a cascade exceeds a budget.
+Treating a whole agent run as the query would give a run-level bound, but a
+cascade's cost is a fixed function of the query, while an agent's run cost
+depends on the controller's own admission decisions; our calibration is over
+that controller.
 
 \paragraph{Budget enforcement for agents.}
-\citet{khan2026tokenbudgets} catalogues 63 production overrun incidents and
-enforces a dollar cap with an affine-typed Rust library, reporting static
-over-reservation of 4--6$\times$. Green SARC \citep{besanson2026greensarc}
-places enforcement gates in the agent loop and calibrates its per-action cost
-forecasts with split-conformal prediction. These systems make the cap hard by
-reserving conservatively, or calibrate individual actions; to our knowledge
-none bounds the probability that an entire adaptive run exceeds its budget
-while letting the operator trade that probability for capability.
+\citet{khan2026tokenbudgets} catalogues 63 overrun incidents and enforces a hard
+dollar cap with an affine-typed Rust library, reporting 4--6$\times$ static
+over-reservation. Green SARC \citep{besanson2026greensarc} places enforcement
+gates in the agent loop, calibrates per-action cost forecasts with
+split-conformal prediction, and reports zero over-budget incidence for its
+architectural gate. These systems make the cap hard by reserving
+conservatively, or calibrate individual actions; we are not aware of work that
+certifies the probability that an adaptive run overspends while letting the
+operator trade that probability for capability.
 
 \paragraph{Distribution-free risk control.}
-Conformal prediction and its risk-control extensions
-\citep{bates2021rcps,angelopoulos2022crc} bound the expected loss of a
-calibrated predictor. Learn-then-Test \citep{angelopoulos2021ltt} recasts the
-choice of a hyperparameter as multiple hypothesis testing and controls
-arbitrary, non-monotone risks. Anytime-valid variants handle sequentially
-arriving data \citep{hultberg2026anytime}, and ToolChain-CRC applies
-trajectory-level conformal risk control to agent correctness under drift
-\citep{opoku2026toolchaincrc}. DAPRO \citep{feldman2026spend} allocates a
-compute budget dynamically across multi-turn LLM evaluations with
-distribution-free coverage guarantees, satisfying the budget in expectation
-rather than with high probability. We apply Learn-then-Test to budget risk, where
-the relevant loss is defined over whole runs.
+Conformal prediction and risk control \citep{bates2021rcps,angelopoulos2022crc}
+bound the expected loss of a calibrated predictor; Learn-then-Test
+\citep{angelopoulos2021ltt} recasts the choice of a hyperparameter as multiple
+testing and controls non-monotone risks. Anytime-valid variants handle
+sequentially arriving data \citep{hultberg2026anytime}; ToolChain-CRC applies
+trajectory-level risk control to agent correctness under drift
+\citep{opoku2026toolchaincrc}; DAPRO \citep{feldman2026spend} allocates
+evaluation compute across multi-turn interactions, meeting its budget in
+expectation. The scenario approach \citep{campi2008exact} gives related
+finite-sample guarantees for decisions chosen from sampled constraints, and
+constrained MDPs \citep{altman1999cmdp} formalise expected-cost constraints in
+sequential decisions. Our setting is a chance constraint on a run's total cost
+under a fixed, adaptive controller.
 
 % ---------------------------------------------------------------------------
 \section{Problem setup}\label{sec:setup}
 
-A task $X$ is drawn i.i.d.\ from a distribution $\mathcal{D}$. A run proceeds
-in steps $t = 1, 2, \dots$. Before step $t$ the controller knows the money spent
-so far $s_{t-1}$, the prompt length $n_t$, and the history. It picks a model
-$m_t$ and a step type $k_t$ (tool call or final answer), or refuses, which ends
-the run without an answer. After the call it observes the output length $y_t$
-and pays $c_t = p^{\text{in}}_{m_t} n_t + p^{\text{out}}_{m_t} y_t$.
+A task $X$ is drawn i.i.d.\ from a distribution $\mathcal{D}$. A run proceeds in
+steps $t = 1, 2, \dots$. Before step $t$ the controller knows the amount spent
+so far $s_{t-1}$, an estimate $\hat n_t$ of the prompt length, and the history.
+It chooses a model $m_t$, or refuses, which ends the run without an answer.
+After the call it observes $y_t$ and pays $c_t = p^{\text{in}}_{m_t} n_t +
+p^{\text{out}}_{m_t} y_t$.
 
 \paragraph{Reservation policies.}
-The controller admits a call if $s_{t-1} + p^{\text{in}}_m n_t +
-p^{\text{out}}_m\, u(m,k) \le B$, where $u(m,k)$ is a planned output length. To
-leave room to finish, a tool call is admitted only if a subsequent final answer
-on the cheap model also fits. The plan $u$ defines the policy:
-\begin{itemize}
-  \item \textbf{estimate}: $u$ is the mean output length;
-  \item \textbf{preflight}: $u = Y^{\max}_m$, the provider's maximum output;
-  \item \textbf{calibrated} (ours): $u = \hat q_\beta(m,k)$, the empirical
-  $(1-\beta)$ quantile of output length for stratum $(m,k)$, estimated on
-  held-out logs. $\beta$ is a single scalar chosen by calibration.
-\end{itemize}
+A call to model $m$ is admitted iff
+$s_{t-1} + p^{\text{in}}_m \lceil (1+\mu)\hat n_t \rceil + p^{\text{out}}_m u_m \le B$,
+where $u_m$ is the planned output length and $\mu \ge 0$ a prompt margin. The
+plan defines the policy:
+\textbf{estimate} sets $u_m$ to the mean logged output length ($\mu = 0$);
+\textbf{preflight} sets $u_m = Y^{\max}_m$, the provider's maximum output;
+\textbf{calibrated} sets $u_m = \hat q_\beta(m)$, the empirical $(1-\beta)$
+quantile of logged output lengths of model $m$, with $\beta$ chosen by
+calibration. A calibrated policy at level $\beta$ is exactly per-call quantile
+reservation at level $\beta$; what differs is how $\beta$ is chosen.
 
-\paragraph{Two modes.}
-In \textbf{Mode A} responses are never cut off, and the run loss is
-$L_A = \mathbf{1}\{\sum_t c_t > B\}$. In \textbf{Mode B} each call carries
-\texttt{max\_tokens} equal to the largest output that still fits the remaining
-budget. Overrun becomes impossible and the loss is truncation,
-$L_B = \mathbf{1}\{\text{some response was cut off}\}$. Mode A is the default
-in Baar-Core because silent truncation can corrupt downstream results without
-any visible error. The risk of policy $\pi$ is $R(\pi) = \mathbb{E}[L(\pi)]$.
+\paragraph{Modes and risk.}
+In \textbf{Mode A} responses are never cut off and the run loss is
+$L = \mathbf 1\{\sum_t c_t > B\}$. In \textbf{Mode B} each call carries a
+\texttt{max\_tokens} equal to the largest affordable output, so overrun is
+impossible and $L = \mathbf 1\{\text{some response was cut off}\}$. Mode A is
+the default in Baar-Core, because a silently truncated answer can corrupt
+downstream results. The risk of a policy is $R(\pi) = \mathbb E[L(\pi)]$.
 
-Preflight has $R = 0$ in both modes: it never overruns, and in Mode B its
-\texttt{max\_tokens} is never binding.
-
-% ---------------------------------------------------------------------------
-\section{Why per-step bounds collapse}\label{sec:perstep}
-
-The natural route to \eqref{eq:goal} bounds each step. Choose levels
-$\alpha_t$ with $\sum_t \alpha_t \le \varepsilon$ (a union bound, or an online
-``risk-spending'' schedule that spends a fraction of the remaining
-$\varepsilon$ only when a step is tight), and plan $u_t$ at an upper
-confidence bound on the $(1-\alpha_t)$ quantile. If every $y_t \le u_t$, the run
-cannot overrun, so the overrun probability is at most $\sum_t \alpha_t$ plus
-the calibration failure probability.
-
-This is valid, but expensive in two ways.
-
-\begin{proposition}\label{prop:n}
-Let $Y_1, \dots, Y_n$ be i.i.d.\ and $Y_{(j)}$ their order statistics. The
-smallest order statistic that is a valid $(1-\alpha)$ upper quantile bound with
-confidence $1-\delta'$ is $Y_{(j)}$ with the least $j$ such that
-$\Pr(\mathrm{Bin}(n, 1-\alpha) \ge j) \le \delta'$. No order statistic
-qualifies, and the bound must fall back to $Y^{\max}$, unless
-\[
-  n \;\ge\; \frac{\log(1/\delta')}{-\log(1-\alpha)} \;\approx\; \frac{\log(1/\delta')}{\alpha}.
-\]
-\end{proposition}
-\begin{proof}
-$Y_{(j)}$ lies below the $(1-\alpha)$ quantile only if at least $j$ samples do,
-which has probability at most $\Pr(\mathrm{Bin}(n,1-\alpha) \ge j)$. Even
-$j = n$ requires $(1-\alpha)^n \le \delta'$.
-\end{proof}
-
-With $\varepsilon = 0.05$ spread over ten steps ($\alpha = 0.005$), and
-$\delta'$ divided further across strata and quantile levels so that all bounds
-hold simultaneously (e.g.\ $\delta' = 0.05/160$ for 4 strata and 40 levels),
-the proposition requires about $1{,}600$ logged outputs per stratum merely to beat $Y^{\max}$. Risk
-spending makes later steps stricter still, because the remaining budget of risk
-shrinks geometrically.
-
-The deeper problem is that the union bound charges every step for its own tail.
-A single long response almost never causes a run-level overrun, because most
-runs finish well under budget. The per-step bound for the capable model, at a
-tail level of a fraction of a percent, is priced near the entire budget, so the
-capable model is never admitted. Table~\ref{tab:valid} shows exactly this: the
-per-step policy achieves zero overruns and zero use of the capable model,
-indistinguishable from preflight. Run-level calibration avoids the union bound
-altogether.
+\paragraph{When does output reservation matter?}
+Let $\kappa_m = p^{\text{out}}_m Y^{\max}_m / B$ be the price of one
+maximum-length output of model $m$ as a fraction of the run budget. If
+$\kappa_m \ge 1$, preflight can never admit $m$; if $\kappa_m \ll 1$, the
+difference between reservation policies is a small share of the budget, and
+which policy is used hardly matters. The three workloads below span
+$\kappa$ from $0.013$ to about $70$.
 
 % ---------------------------------------------------------------------------
-\section{Run-level calibration with Learn-then-Test}\label{sec:method}
+\section{Run-level certification}\label{sec:method}
 
-Fix in advance a grid $\beta_1 < \beta_2 < \dots < \beta_J$ ordered from
-conservative to aggressive, and the per-stratum quantile tables
-$\hat q_\beta$, estimated on data disjoint from calibration. For each $\beta_j$
-the calibrated policy $\pi_{\beta_j}$ is fully specified, so its run-level risk
-$R_j = R(\pi_{\beta_j})$ is a fixed number. We test the null hypotheses
-$H_j : R_j > \varepsilon$ in order.
+Fix in advance a sequence of policies $\pi_1, \dots, \pi_J$, ordered from
+conservative to aggressive, and a fallback $\pi_0$. For us the family is the
+calibrated policy at each level $\beta_j$ together with estimate mode, ordered
+by the number of output tokens they reserve, largest first; any fixed order is
+valid, and this one tests the most conservative plans first. The
+quantile tables that define the $\pi_j$ are estimated on data disjoint from
+calibration, so each $R_j = R(\pi_j)$ is a fixed number.
+
+\begin{assumption}\label{ass:fallback}
+$R(\pi_0) = 0$. Refusing every run satisfies this trivially. Preflight
+satisfies it in Mode A if every call's reserved cost is at least its billed
+cost, that is, if $p^{\text{in}}\lceil(1+\mu)\hat n_t\rceil \ge p^{\text{in}} n_t$
+and outputs never exceed $Y^{\max}$; and in Mode B unconditionally.
+\end{assumption}
 
 \paragraph{Procedure.}
-For $j = 1, 2, \dots$: execute $n$ fresh runs on i.i.d.\ tasks under
-$\pi_{\beta_j}$ with budget $B$, count failures $F_j$, and compute the exact
-binomial $p$-value
-\[
-  p_j \;=\; \Pr\bigl(\mathrm{Bin}(n,\varepsilon) \le F_j\bigr).
-\]
-If $p_j \le \delta$, reject $H_j$ and continue; otherwise stop. Deploy
-$\hat\beta = \beta_{\hat\jmath}$, the last rejected level, or preflight if
-$H_1$ is not rejected.
+Draw $n$ i.i.d.\ calibration runs. For each $j$ let $F_j$ be the number of runs
+whose loss under $\pi_j$ is~1; the same runs may be used for every $j$. With
+$p_j = \Pr(\mathrm{Bin}(n,\varepsilon) \le F_j)$, test $j = 1, 2, \dots$ in
+order, continue while $p_j \le \delta$, and deploy $\pi_{\hat\jmath}$ for the
+last $j$ with $p_j \le \delta$, or $\pi_0$ if $p_1 > \delta$.
 
 \begin{theorem}\label{thm:main}
-If calibration runs are i.i.d.\ draws of (task, sampling randomness) from the
-deployment distribution, then
-$\Pr\bigl(R(\pi_{\hat\beta}) > \varepsilon\bigr) \le \delta$, where the
-probability is over the calibration runs. This holds for any output-length
-distributions, any dependence between steps, and with no monotonicity of $R_j$
-in $j$.
+Under Assumption~\ref{ass:fallback}, if calibration runs are i.i.d.\ draws of
+(task, sampling randomness) from the deployment distribution, then
+$\Pr\bigl(R(\pi_{\hat\jmath}) > \varepsilon\bigr) \le \delta$, for any
+output-length distribution, any dependence between steps, any dependence
+between the $F_j$, and without monotonicity of $R_j$ in $j$.
 \end{theorem}
 \begin{proof}
-If $R_j \le \varepsilon$ for all $j$, the deployed policy (any $\pi_{\beta_j}$,
-or preflight with risk $0$) has risk at most $\varepsilon$. Otherwise let
-$j^\ast$ be the smallest index with $R_{j^\ast} > \varepsilon$; it is
-deterministic. The deployed policy has risk above $\varepsilon$ only if
-$\hat\jmath \ge j^\ast$, which requires $H_{j^\ast}$ to be rejected. Under
-$H_{j^\ast}$, $F_{j^\ast} \sim \mathrm{Bin}(n, R_{j^\ast})$ with
-$R_{j^\ast} > \varepsilon$, which is stochastically larger than
-$\mathrm{Bin}(n,\varepsilon)$; hence $\Pr(p_{j^\ast} \le \delta) \le \delta$.
+If $R_j \le \varepsilon$ for all $j$, every possible deployment has risk at most
+$\varepsilon$. Otherwise let $j^\ast$ be the smallest index with
+$R_{j^\ast} > \varepsilon$; it is deterministic. Deploying a policy with risk
+above $\varepsilon$ requires $\hat\jmath \ge j^\ast$, hence $p_{j^\ast} \le
+\delta$. Marginally $F_{j^\ast} \sim \mathrm{Bin}(n, R_{j^\ast})$, which is
+stochastically larger than $\mathrm{Bin}(n,\varepsilon)$, so
+$\Pr(p_{j^\ast} \le \delta) \le \delta$. Only the marginal law of $F_{j^\ast}$
+is used, so sharing runs across $j$ is allowed.
 \end{proof}
 
 This is the fixed-sequence instance of Learn-then-Test
-\citep{angelopoulos2021ltt}. Three properties matter for budgets. First, the
-guarantee is about whole runs, so it accounts for adaptive routing, growing
-context and correlated step lengths without modelling them. Second, the
-per-stratum quantile tables only shape the policy family; if they are wrong,
-the procedure selects a more conservative $\beta$ rather than losing validity.
-Third, the same procedure controls truncation in Mode B by changing the loss.
+\citep{angelopoulos2021ltt}. Three consequences matter in practice.
 
-\paragraph{Cost of calibration.}
-Each tested level requires $n$ executed runs, because routing depends on
-$\beta$ and runs cannot be replayed counterfactually. The total is
-$(\hat\jmath + 1) n$ runs. In Mode A some calibration runs overrun by design;
-this spend should be accounted for when budgeting the calibration itself.
+\paragraph{Calibration cost.}
+For a controller that only admits or refuses calls, refusing never changes the
+steps before it. One batch of $n$ runs logged without a binding budget can
+therefore be replayed exactly under every $\pi_j$, and calibration costs $n$
+runs rather than $(\hat\jmath + 1)n$. For controllers whose policy changes the
+trajectory (for example by routing to a different model), each tested level
+needs its own runs, at most $\min(\hat\jmath+1, J)\,n$.
+
+\begin{proposition}\label{prop:nmin}
+No policy can be certified unless $(1-\varepsilon)^n \le \delta$, i.e.\
+$n \ge \ln(1/\delta)/(-\ln(1-\varepsilon)) \approx \ln(1/\delta)/\varepsilon$.
+At $\delta = 0.05$ this is 299 runs for $\varepsilon = 0.01$, 149 for $0.02$,
+and 59 for $0.05$.
+\end{proposition}
+\begin{proof}
+$p_1 \ge \Pr(\mathrm{Bin}(n,\varepsilon) \le 0) = (1-\varepsilon)^n$.
+\end{proof}
+
+\paragraph{What the tables do and do not affect.}
+The guarantee does not depend on how good the quantile tables are, only on
+their being fixed before calibration; tables fitted on the calibration runs
+would make the $\pi_j$ data-dependent. Poor tables can only make the family
+less useful: every certified policy is still safe, but it may buy less
+capability.
+
+% ---------------------------------------------------------------------------
+\section{Why per-call and per-step control fall short}\label{sec:percall}
+
+\paragraph{Per-call levels.}
+Reserving the $(1-\beta)$ quantile bounds, for exchangeable calls, the
+probability that one response exceeds its reservation by $\beta$. The run-level
+risk of the same policy can be far lower or higher. It is lower when most runs
+end with budget to spare, so an exceeding response rarely matters: in our
+simulator, per-call level $\beta = 0.3$ gives run risk between
+0.1\% and 5.0\% depending only on the budget and the tables (Figure~\ref{fig:risk}). It is higher
+when budgets are tight and runs are long: if each of $T$ calls has independent
+exceedance probability $\beta$ and any exceedance overruns, the run risk is
+$1-(1-\beta)^T$. The mapping from $\beta$ to run risk depends on the workload
+and the budget, so it has to be measured at the run level.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/risk_curve.pdf}
+\caption{Run-level overrun probability of per-call quantile reservation at
+level $\beta$, in the simulator (Mode A). Each curve is one run budget; risks
+are measured on 100{,}000 held-out tasks. The dotted line is run risk $=\beta$.}
+\label{fig:risk}
+\end{figure}
+
+\paragraph{Per-step union bounds.}
+The direct route to~\eqref{eq:goal} through individual calls chooses levels
+$\alpha_t$ with $\sum_t \alpha_t \le \varepsilon$ and reserves an upper
+confidence bound on each $(1-\alpha_t)$ quantile; if no response exceeds its
+reservation, the run cannot overrun. Our baseline spends a fraction of the
+remaining $\varepsilon$ only when a step is tight (risk spending, half per
+tight step, split between the step and a wrap-up reserve, so the first tight
+step gets $\alpha_1 = \varepsilon/4$), with exact binomial quantile bounds,
+Bonferroni-corrected across 4 strata and 40 quantile levels. It fails for two
+reasons.
+
+\begin{proposition}\label{prop:perstep}
+With $n$ i.i.d.\ samples, the smallest order statistic that upper-bounds the
+$(1-\alpha)$ quantile with confidence $1-\delta'$ is $Y_{(j)}$ for the least $j$
+with $\Pr(\mathrm{Bin}(n,1-\alpha) \ge j) \le \delta'$; none exists unless
+$n \ge \ln(1/\delta')/(-\ln(1-\alpha))$.
+\end{proposition}
+
+With $\delta' = 0.05/160$, the first tight step uses the largest grid level
+not above $\varepsilon/4$, which is $0.00213$ at $\varepsilon = 0.01$; that
+requires 3{,}790 samples per stratum, more than the 2{,}000 we log, so the bound
+falls back to $Y^{\max}$ (\emph{sample size}). From $\varepsilon = 0.02$
+(1{,}966 samples) the bounds are finite but sit far in the tail, and one
+capable-model call priced at that tail costs more than the remaining budget
+(\emph{tail cost}). Both
+mechanisms come from charging each step for its own tail, while a run-level
+overrun needs a long response \emph{and} a run that is already near its budget.
 
 % ---------------------------------------------------------------------------
 \section{Simulation study}\label{sec:sim}
 
 \paragraph{Simulator.}
-Two models with list prices of $\$0.15/\$0.60$ (small) and $\$2.50/\$10.00$
-(capable) per million input/output tokens, and maximum outputs of 4{,}096 and
-8{,}192 tokens. Output lengths are lognormal per stratum (model $\times$ step
-type), with the capable model and final answers longer. Each run starts with a
-600-token prompt; each tool step appends the output and an observation of
-50--800 tokens. The number of steps the task needs is geometric with mean 6,
-capped at 30. The controller prefers the capable model while more than half
-the budget remains, downgrades to the small model when the capable one does not
-fit, and wraps up early on the small model if necessary. The run budget is
-$B = \$0.02$. In the \textbf{misspecified} scenario every task has a hidden
-difficulty that scales all its output lengths by $e^{d}$, $d \sim
-\mathcal{N}(0, 0.6^2)$, so steps within a run are correlated and the
-per-stratum model is wrong.
+Two models are priced at \$0.15/\$0.60 (small) and \$2.50/\$10.00 (capable) per
+million input/output tokens, with maximum outputs of 4{,}096 and 8{,}192 tokens.
+Output lengths are lognormal per (model, step type), longer for the capable
+model and for final answers. A run starts with a 600-token prompt; each tool
+step appends its output and an observation of 50--800 tokens. A task needs
+$1 + G$ steps with $G \sim \mathrm{Geometric}(1/6)$ (mean 7), capped at 30. The
+controller prefers the capable model while more than half the budget remains,
+downgrades to the small model when the capable one does not fit, admits a tool
+step only if a later small-model final answer also fits, and otherwise wraps up
+early. This stylised controller is richer than Baar-Core's admission rule; the
+real-trace studies below use the shipped rule. Quantile tables (linearly
+interpolated; the real-trace studies use the library's order statistics) and the
+estimate-mode means come from 2{,}000 logged outputs per stratum.
 
-\paragraph{Settings.}
-Quantile tables use 2{,}000 held-out samples per stratum. Learn-then-Test uses
-$\beta \in \{0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5\}$,
-$n = 1{,}000$ calibration runs per level and $\delta = 0.05$. The per-step
-baseline uses exact binomial quantile bounds with Bonferroni correction across
-strata and quantile levels and lazy risk spending. Each policy is evaluated on
-20{,}000 fresh test runs. ``Big'' is the fraction of executed steps on the
-capable model, our proxy for how much capability the budget buys; ``done'' is
-the fraction of runs that reach a final answer rather than being refused.
+\paragraph{Scenarios.}
+In the \textbf{matched} scenario the tables come from the deployment
+distribution. In the \textbf{shifted} scenario the tables and the estimate-mode
+means are fitted on easy tasks, but in deployment every task has a hidden
+difficulty $d \sim \mathcal N(0, 0.6^2)$ that scales all its output lengths by
+$e^{d}$, so the tables are wrong in both mean and tail, and steps within a run
+are correlated.
+
+\paragraph{Protocol.}
+For each scenario, budget $B \in \{0.01, 0.02, 0.05, 0.10\}$ (Mode A) and
+$B = 0.02$ (Mode B), we draw 200{,}000 tasks and run each under preflight,
+estimate and the calibrated policy at 19 levels $\beta \in [0.001, 0.7]$, with
+common random numbers. For each $\varepsilon \in \{0.01, 0.02, 0.05, 0.10\}$
+and $n \in \{100, 300, 1{,}000, 3{,}000\}$ we draw 2{,}000 calibration sets of
+$n$ tasks without replacement from 100{,}000 of these tasks (close to i.i.d.\
+sampling at these $n$) and run the procedure with $\delta = 0.05$. Every
+selected policy is then scored against its \emph{true} risk and outcomes,
+estimated on a fresh pool of 400{,}000 tasks per setting (1{,}000{,}000 for
+one) with disjoint seeds, so that a risk near 10\% is known to within 0.05
+percentage points. A \emph{violation} is a selected policy whose true risk
+exceeds $\varepsilon$; it is \emph{clear} if the excess is more than two
+standard errors. We compare against preflight; the per-step baseline
+(20{,}000 runs per setting); estimate mode, which has no guarantee; a
+\emph{certified estimate} that runs one binomial test on estimate mode and
+falls back to preflight if it fails (Learn-then-Test with $J = 1$); and the
+\emph{oracle}, the member of the family with the highest capable-model share
+among those whose true risk is at most $\varepsilon$.
 
 \begin{table}[t]
 \centering
-\caption{Well-specified simulator, $B=\$0.02$, $\delta=0.05$, 20{,}000 test
-runs. Failure is overrun in Mode A and truncation in Mode B. Estimate and
-preflight do not depend on $\varepsilon$.}
-\label{tab:valid}
-\begin{tabular}{llrrrr}
+\caption{Simulator, matched scenario, Mode A, $\varepsilon = 0.05$, $n = 1{,}000$.
+$\kappa$: price of one maximum capable-model output over $B$. ``Big'': share of
+executed steps on the capable model (\%). Risk in \%. Violation: share of
+2{,}000 calibrations whose selected policy has risk above $\varepsilon$.}
+\label{tab:sim}
+\small
+\begin{tabular}{rrrrrrrrr}
 \toprule
-Mode & Policy & $\hat\beta$ & Failure & Big & Done \\
+$B$ & $\kappa$ & preflight & per-step & estimate & cert.\ est. & \multicolumn{2}{c}{run-level LTT} & oracle \\
+\cmidrule(lr){7-8}
+ & & big & big & risk / big & big & risk / big & viol. & big \\
 \midrule
-A & estimate & -- & 4.69\% & 44.6\% & 88.8\% \\
-A & preflight & -- & 0 & 0 & 100\% \\
-A & per-step, $\varepsilon \in \{.01,.05,.10\}$ & -- & 0 & 0 & 100\% \\
-A & LTT, $\varepsilon = 0.01$ & 0.1 & 0.37\% & 31.3\% & 94.0\% \\
-A & LTT, $\varepsilon = 0.05$ & 0.2 & 2.63\% & 41.4\% & 90.4\% \\
-A & LTT, $\varepsilon = 0.10$ & 0.5 & 6.46\% & 45.2\% & 88.4\% \\
+\csname @@input\endcsname tables/sim_budget_valid.tex 
+\bottomrule
+\end{tabular}
+
+\vspace{6pt}
+\par\smallskip\textit{Shifted scenario (tables fitted on easier tasks), same settings.}\par\smallskip
+\begin{tabular}{rrrrrrrrr}
+\toprule
+$B$ & $\kappa$ & preflight & per-step & estimate & cert.\ est. & \multicolumn{2}{c}{run-level LTT} & oracle \\
+\cmidrule(lr){7-8}
+ & & big & big & risk / big & big & risk / big & viol. & big \\
 \midrule
-B & estimate & -- & 13.55\% & 44.6\% & 88.8\% \\
-B & LTT, $\varepsilon = 0.01$ & 0.01 & 0 & 0 & 100\% \\
-B & LTT, $\varepsilon = 0.05$ & 0.05 & 3.08\% & 24.4\% & 96.3\% \\
-B & LTT, $\varepsilon = 0.10$ & 0.1 & 5.26\% & 31.3\% & 94.0\% \\
+\csname @@input\endcsname tables/sim_budget_shift.tex 
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Validity over all settings (2 scenarios $\times$ 5 budget/mode
+configurations $\times$ 4 values of $\varepsilon$), 2{,}000 calibrations each,
+$\delta = 0.05$, in \%. Violation: selected policy's true risk above
+$\varepsilon$; clear: by more than two standard errors; calibration population:
+risk in the 100{,}000-task pool the calibration sets were drawn from.
+Fallback: share of calibrations that certified nothing.}
+\label{tab:validity}
+\small
+\begin{tabular}{rrrrrrr}
+\toprule
+$n$ & settings & pooled viol. & max viol. & max clear & max (cal.\ pop.) & fallback \\
+\midrule
+\csname @@input\endcsname tables/sim_validity.tex 
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/capability.pdf}
+\caption{Share of steps on the capable model at $\varepsilon = 0.05$,
+$n = 1{,}000$, across run budgets (Mode A).}
+\label{fig:cap}
+\end{figure}
+
+\paragraph{Results.}
+Table~\ref{tab:sim} and Figure~\ref{fig:cap} show what each approach buys at
+$\varepsilon = 0.05$. Preflight and the per-step baseline use the capable model
+for no step while $\kappa \ge 4$; per-step control reaches 14\% at
+$\kappa = 1.6$ and 44\% at $\kappa = 0.8$, against 53\% and 65\% for run-level
+calibration. Uncertified estimate mode buys about as much capability, but its
+risk is whatever the workload makes it: under the shifted tables it overruns
+5.4\% of runs at $B = \$0.02$, above the tolerance. The certified estimate is
+competitive only when estimate mode is far below $\varepsilon$; near the
+tolerance its single test fails and it falls back to preflight (6.3\% and
+0.5\% capable-model steps at $B = \$0.02$), whereas the run-level policy keeps
+43\% and 42\%. At $\varepsilon = 0.05$ and $n = 1{,}000$ the certified policy is
+within 3.6 points of the oracle in Mode A and 6.0 in Mode B. At smaller
+tolerances the gap grows where budgets are tightest: the median gap is 0.7 and
+3.6 points at $\varepsilon = 0.01$ and $0.02$, but it reaches 15--16 points at
+$B = \$0.01$, where 1{,}000 runs give little power to certify the levels whose
+risk lies just below $\varepsilon$. In Mode B at $B = \$0.02$, estimate mode
+truncates 13.5\% of runs (matched) and 17.1\% (shifted); at
+$\varepsilon = 0.05$ the certified policy truncates 3.4\% and 2.3\% on average.
+
+Table~\ref{tab:validity} summarises validity. Pooled over the 40 settings, the
+selected policy's true risk exceeded $\varepsilon$ in 0.4--0.8\% of
+calibrations at each calibration size. The worst setting reached 5.3\% (106 of
+2{,}000; 95\% Clopper--Pearson interval 4.4--6.4\%), consistent with
+$\delta = 5\%$: in the shifted scenario at $B = \$0.01$ and $\varepsilon = 0.02$,
+the level $\beta = 0.2$ has true risk just above $\varepsilon$, which is where
+the bound of Theorem~\ref{thm:main} is tight, since the test at that level
+rejects with probability close to $\delta$. A second setting with a similar
+count (107 of 2{,}000) selected a level whose true risk is within two standard
+errors of $\varepsilon$, so its violations are ambiguous rather than clear. At
+$n = 100$, the settings with $\varepsilon \le 0.02$ can certify nothing, as
+Proposition~\ref{prop:nmin} predicts, and fall back to preflight; from
+$n = 300$ fallback is rare (0.3\%).
+
+% ---------------------------------------------------------------------------
+\section{Real short-horizon runs: HotpotQA}\label{sec:hotpot}
+
+\paragraph{Data.}
+A ReAct-style agent \citep{yao2023react} answers HotpotQA distractor questions
+\citep{yang2018hotpotqa}. It sees the titles of the ten context paragraphs, may
+call \texttt{lookup(title)} to read one, and stops with a final answer or after
+eight steps (temperature 0.7; answers scored by token F1). Runs are short,
+2.6 calls on average, so dependence between steps is only lightly exercised. We logged 1{,}500
+runs with gpt-4o-mini and 600 with gpt-4o on the same shuffled tasks: every
+call's prompt tokens, the controller's pre-call prompt estimate, output tokens
+and cost. The total spend was \$1.85, itself capped by Baar-Core.
+
+\paragraph{Exact replay of the shipped controller.}
+We replay each logged run under each policy with the admission rule of
+Baar-Core 0.11.0: one plan per model, pooling step types, because the
+controller does not know in advance whether a call will be a tool call or a
+final answer; quantiles from the library's \texttt{QuantileTable}; and the
+pre-call prompt estimate the controller actually logged. Every policy,
+including estimate mode, prices the prompt with the same margin $\mu = 0.2$;
+the shipped estimate mode uses no margin and a fixed expected output of 500
+tokens by default, so giving it the margin and the logged mean output favours
+the baseline. Since refusing a call never changes the steps before it, the
+replay is exact. For each of 200 random splits, 25\% of runs build the quantile
+table and set the budget (a percentile of their unconstrained cost, from the
+50th to the 99th, so the budget is fixed before calibration), 37.5\% calibrate
+(shared across levels) and 37.5\% are held out. The family is the calibrated
+levels $\beta \in [0.001, 0.99]$ plus estimate mode, ordered by reserved tokens.
+We report held-out outcomes and the share of splits in which a one-sided
+binomial test finds the held-out overrun rate significantly above
+$\varepsilon$.
+
+\paragraph{What the traces look like.}
+Outputs are short: the 99th percentile is 57--65 tokens and the maximum 181,
+while $Y^{\max} = 16{,}384$, so $\kappa \approx 70$ for gpt-4o at the median
+budget. The logged prompt estimate under-counted in 94\% of calls, by a median
+of 29 tokens (9\%), because the library's token counter could not take tool
+schemas; recounting a sample of first-step prompts with the schema matched the billed
+count to within one token. The 20\% prompt margin does not absorb this: in
+38\% of calls, mostly first steps where the schema is about a fifth of the
+prompt, the margined estimate was still short. This does not affect the
+guarantee for calibrated policies, whose overruns are counted in calibration
+whatever their cause, but it means Assumption~\ref{ass:fallback} would fail for
+preflight with this counter in general; here preflight admitted no run, so its
+risk was zero.
+
+\begin{table}[t]
+\centering
+\caption{HotpotQA, held-out results over 200 splits (\%). Estimate mode (same
+prompt margin) has no
+guarantee. Sig.\ viol.: share of splits where the held-out overrun rate is
+significantly above $\varepsilon$ (one-sided binomial test, level 0.05).
+Preflight finished no run at any of these budgets.}
+\label{tab:hotpot}
+\small
+\begin{tabular}{llcrrrrrrr}
+\toprule
+ & & estimate & & cert.\ est. & \multicolumn{4}{c}{run-level LTT} & oracle \\
+\cmidrule(lr){6-9}
+model & $B$ & over / done & $\varepsilon$ & done & over & over p95 & done & sig.\ viol. & done \\
+\midrule
+\csname @@input\endcsname tables/hotpot.tex 
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Results.}
-Table~\ref{tab:valid} shows the well-specified case. Estimate mode overruns
-4.7\% of runs regardless of the operator's tolerance, and in Mode B it
-truncates 13.6\% of runs. Preflight and the per-step policy never fail but
-never use the capable model. Learn-then-Test meets every target and, at
-$\varepsilon = 0.05$, spends 41\% of steps on the capable model while
-overrunning 2.6\% of runs, close to estimate mode's capability at about half
-its overrun rate and with a certificate. At $\varepsilon = 0.01$ in Mode B no
-aggressive level could be certified and the procedure correctly fell back to
-near-preflight behaviour. The misspecified scenario gives the same picture
-(Table~\ref{tab:broken}): estimate mode overruns 5.3\%, and Learn-then-Test
-meets every target with 29--46\% capable-model steps.
-
-\begin{table}[t]
-\centering
-\caption{Misspecified simulator (hidden per-task difficulty), Mode A.}
-\label{tab:broken}
-\begin{tabular}{lrrrr}
-\toprule
-Policy & $\hat\beta$ & Overrun & Big & Done \\
-\midrule
-estimate & -- & 5.25\% & 45.2\% & 85.9\% \\
-preflight / per-step & -- & 0 & 0 & 100\% \\
-LTT, $\varepsilon = 0.01$ & 0.1 & 0.50\% & 29.1\% & 92.4\% \\
-LTT, $\varepsilon = 0.05$ & 0.2 & 2.65\% & 41.0\% & 87.6\% \\
-LTT, $\varepsilon = 0.10$ & 0.5 & 7.05\% & 45.9\% & 85.7\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{Is the guarantee real?}
-Theorem~\ref{thm:main} is a statement about the calibration draw, so we repeat
-the whole procedure 500 times per scenario with independent calibration runs
-($\varepsilon = \delta = 0.05$, Mode A) and measure each deployed policy's
-overrun rate on 4{,}000 fresh runs. The deployed policy violated
-$\varepsilon$ in 1 of 500 calibrations in the well-specified scenario (0.2\%;
-95\% Clopper--Pearson interval 0.0--1.1\%) and 5 of 500 in the misspecified
-scenario (1.0\%; 0.3--2.3\%), both well below $\delta = 5\%$. These counts are
-slightly inflated by Monte Carlo error in the 4{,}000-run estimate; the largest
-measured overrun rate was 5.17\%. Mean overrun was 3.0\% and 2.8\%, and
-capable-model share was 42.4\% and 40.4\%.
-
-\paragraph{The price of control.}
-Learn-then-Test completes fewer runs than preflight (88--94\% versus 100\%),
-because a more aggressive plan admits capable-model steps that later leave too
-little budget to finish, and the controller refuses. Completion is not part of
-the controlled loss here. A loss of ``overrun \emph{or} incomplete'' is
-equally valid under Theorem~\ref{thm:main} and would trade capability for
-completion; we leave its study to future work.
+Across all 30 settings (two models, five budgets, three values of
+$\varepsilon$; Table~\ref{tab:hotpot} shows three budgets), the held-out
+overrun rate was significantly above $\varepsilon$ in at most one split of 200
+(0.5\%), within the test's own false-alarm rate. Preflight finished no run at
+any budget, because one maximum-length output costs more than the whole budget.
+With the prompt margin, estimate mode is already fairly safe on this workload
+(at most 0.8\% overrun), so at $\varepsilon = 0.05$ the certified estimate
+passes its test and the run-level policy gains little: at the median and 75th
+percentile budgets it finished 47--71\% of runs against 38--67\%, 1.07--1.25
+times as many, and matched the oracle within 1.3 points. The advantage appears
+at tight tolerances, where a single test of estimate mode fails. At
+$\varepsilon = 0.02$ the run-level policy finished 31--69\% of runs against
+8--54\%; at $\varepsilon = 0.01$ with gpt-4o-mini, 39--58\% against 3--4\%. With
+gpt-4o, 225 calibration runs are fewer than the 299 that
+Proposition~\ref{prop:nmin} requires for $\varepsilon = 0.01$, so nothing was
+certified and the procedure fell back to preflight, as it should. The run-level
+policy is not always near the oracle: at $\varepsilon = 0.02$ and the median
+budget it finished 31\% of gpt-4o runs against the oracle's 46\%, because 225
+runs give little power to certify the more aggressive levels.
 
 % ---------------------------------------------------------------------------
-\section{Real-model study}\label{sec:real}
+\section{Real long-horizon runs: coding agents}\label{sec:swe}
 
-\paragraph{Setup.} We ran a ReAct-style agent \citep{yao2023react} on the
-HotpotQA distractor validation set \citep{yang2018hotpotqa}. The agent sees the
-titles of the ten context paragraphs, may call a \texttt{lookup(title)} tool
-to read one, and stops with a final answer or after eight steps (temperature
-0.7, answers scored by token F1). We collected 1{,}500 runs with gpt-4o-mini
-and 600 with gpt-4o on the same shuffled tasks, logging every call's prompt
-tokens, Baar-Core's pre-call prompt estimate, output tokens and cost. Total
-spend was \$1.85, itself hard-capped by Baar-Core in preflight mode.
-
-\paragraph{Exact replay.} A controller that only admits or refuses calls does
-not change what the agent does before it refuses. Each logged run can therefore
-be replayed under any reservation policy and budget, giving the exact outcome
-that policy would have had on that task and sampling draw. Reservations use
-the pre-call prompt estimate that was logged before each call, exactly as the
-controller saw it. We set the run
-budget $B$ to the 50th, 75th or 90th percentile of unconstrained run cost, so
-that it binds for 50\%, 25\% or 10\% of runs. For Learn-then-Test, a random
-quarter of each model's runs fits the quantile tables; the rest form a
-population whose true risk under every $\beta$ is computed exactly. We draw
-calibration sets of half the population size i.i.d.\ from it, run the
-procedure ($\varepsilon = \delta = 0.05$), and repeat 500 times.
-
-\paragraph{What real traces look like.} Outputs are short and light-tailed:
-the 99th percentile is 50--67 tokens for both models and both step types, and
-the maximum observed is 181. The provider maximum of 16{,}384 tokens is
-250--330 times the 99th percentile. Cost is dominated by input tokens, as
-reported for coding agents \citep{bai2026spend}; still, the most expensive run
-cost 8--11 times the median. The logged pre-call prompt estimate
-\emph{under}-counts in 94\% of calls, by a median of 29 tokens (9\%; 37
-tokens on the first step), because Baar-Core's token counter could not take
-the tool schema, which providers bill as prompt tokens. Recounting with the
-schema matched the billed prompt to within one token. This study exposed the
-bug, and it is fixed in Baar-Core; we keep the original estimate in the replay
-because it is what the controller actually used. This matters below.
+\paragraph{Data.}
+We sampled 3{,}000 of the 67{,}074 public OpenHands \citep{wang2024openhands}
+trajectories on SWE-rebench \citep{badertdinov2025swerebench} released by
+\citet{nebius2025trajectories} (CC-BY-4.0), all generated by
+Qwen3-Coder-480B-A35B-Instruct. Each assistant turn is one call; prompt tokens
+are the full preceding history and output tokens the turn's content and
+tool-call arguments, counted with the o200k tokenizer, plus 3{,}121 tokens per
+call for the agent's tool definitions, which are sent with every call but are
+not part of the logged messages.
+We re-price all runs at gpt-4o list prices without prompt caching; costs are
+therefore counterfactual, but the token sequences are real. Runs average 64
+steps (maximum 100, the agent's limit), cost \$5.09 on average (the most
+expensive 3.9 times the median), and resolve the issue in 47\% of cases.
 
 \begin{table}[t]
 \centering
-\caption{Real-trace replay on HotpotQA ($\varepsilon=\delta=0.05$). $B$ is set
-at a percentile of unconstrained run cost. ``Done'' is the fraction of runs
-that finish; F1 counts refused runs as 0. LTT shows the most frequently
-selected $\hat\beta$ and its exact risk; ``viol.'' is the number of the 500
-calibrations whose selected policy had risk above $\varepsilon$. Preflight
-finished no run at any of these budgets.}
-\label{tab:real}
+\caption{Coding-agent trajectories, held-out results over 200 splits (\%),
+$\varepsilon = 0.05$. Over / done for each policy. Unconstrained: share of runs
+that finish when no budget applies.}
+\label{tab:swe}
 \small
-\begin{tabular}{llrrrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-& & \multicolumn{3}{c}{estimate} & \multicolumn{5}{c}{Learn-then-Test} \\
-\cmidrule(lr){3-5}\cmidrule(lr){6-10}
-Model & $B$ & Overrun & Done & F1 & $\hat\beta$ & Overrun & Done & F1 & viol. \\
+budget & $B$ & $\kappa$ & preflight & estimate & run-level LTT & unconstrained done \\
 \midrule
-4o-mini & p50 & 5.3\% & 54.7\% & .328 & 0.1 & 2.8\% & 51.0\% & .308 & 1/500 \\
-4o-mini & p75 & 1.9\% & 77.0\% & .489 & 0.5 & 2.8\% & 78.0\% & .496 & 0/500 \\
-4o-mini & p90 & 0.4\% & 89.7\% & .584 & 0.5 & 0.6\% & 90.0\% & .586 & 0/500 \\
-4o & p50 & 4.9\% & 54.7\% & .317 & 0.05 & 1.6\% & 44.4\% & .258 & 1/500 \\
-4o & p75 & 1.8\% & 75.1\% & .458 & 0.3 & 1.6\% & 74.4\% & .454 & 0/500 \\
-4o & p90 & 0.4\% & 88.4\% & .554 & 0.5 & 1.1\% & 89.3\% & .559 & 0/500 \\
+\csname @@input\endcsname tables/swe.tex 
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Results.} Table~\ref{tab:real} reports the replay. Four findings
-stand out.
-\begin{enumerate}
-  \item \textbf{Worst-case reservation is unusable.} At every budget, the
-  reserved cost of a 16{,}384-token output exceeds the budget, so preflight
-  finishes no run. This is the failure the method exists to fix.
-  \item \textbf{The guarantee holds on real runs.} Across six settings and
-  3{,}000 calibrations, at most one calibration per setting selected a policy
-  with risk above $\varepsilon$, against an allowed $\delta = 5\%$.
-  \item \textbf{Outcomes match estimate mode; the gain is the certificate.} At
-  the 75th and 90th percentile budgets, estimate mode happened to overrun
-  less than $\varepsilon$, and the certified policy reaches the same
-  completion and F1. At the tight median budget estimate mode sits at
-  4.9--5.3\%, at the edge of the tolerance; Learn-then-Test cuts overruns to
-  1.6--2.8\% at a cost of 4--10 points of completion. The difference is that
-  the certified policy's risk is guaranteed in advance, while estimate mode's
-  depends on a workload the operator cannot see beforehand.
-  \item \textbf{Residual risk has more than one source.} Even at
-  $\beta = 0.001$, gpt-4o overruns 0.4--0.7\% of runs at the tighter budgets.
-  Replaying with the true prompt counts separates two causes. At the median
-  budget all of these overruns remain, so they come from outputs longer than
-  any in the 150-run quantile table (whose extreme quantile is 67 tokens,
-  against an observed maximum of 157). At the 75th percentile budget,
-  correcting the prompt count removes two thirds of them (0.7\% to 0.2\%).
-  Run-level calibration absorbs both errors because it measures realized
-  overruns; a per-step output bound covers neither.
-\end{enumerate}
-
-Two caveats. On this task the capable model was not more accurate (F1 0.61
-versus 0.63 unconstrained), so we evaluate each model separately rather than
-the cheap/capable routing of Section~\ref{sec:sim}; routing changes the
-trajectory and cannot be replayed exactly. And HotpotQA outputs are short, so
-the gap between preflight and calibrated reservation is mostly about the
-provider maximum; agents that write code or long answers would have heavier
-tails.
+\paragraph{Results.}
+Here $\kappa$ is 0.013--0.037: one maximum-length output costs at most
+4\% of the budget, and input tokens are 97\% of cost. No policy overran a single
+held-out run at any budget, the certified policy behaved exactly like estimate
+mode, and preflight finished at most 2.9 points fewer runs
+(Table~\ref{tab:swe}). Output reservation is not where the budget bites on this
+workload. What does bite is runs stopped mid-task. Their number is set almost
+entirely by where the budget sits: at a budget equal to the $q$-th percentile of
+run cost, $1-q$ of runs cost more than the budget under any policy, and the
+reservation policy adds at most 3.2 points to the share refused (50--53\% at the
+median budget, 25--27\% at the 75th percentile, 10--11\% at the 90th). What the
+budget does not show is how much is spent on those runs before they are
+stopped: 58--61\% of all spend at the median budget, 35--37\% at the 75th
+percentile and 18--19\% at the 90th. A run-level decision at the \emph{start}
+of a run, to admit it or not, could save that spend if run cost can be
+predicted; that is a different policy family, and the certification of
+Section~\ref{sec:method} applies to it unchanged.
 
 % ---------------------------------------------------------------------------
-\section{Implementation}
+\section{Implementation}\label{sec:impl}
 
-The calibrated plan is a reservation mode in Baar-Core, an open-source Python
-library that enforces LLM budgets before each request is sent. Baar-Core
-estimates the cost of a call locally, atomically reserves it against a
-budget, reconciles with the provider-reported cost afterwards, and routes
-between a cheap and a capable model with downgrading. It already offers the
-estimate and preflight plans as \texttt{estimate} and \texttt{preflight}
-output modes, and Mode B as an opt-in \texttt{truncate} mode.
-
-The method adds a \texttt{calibrated} mode and a dependency-free module
-\texttt{baar.calibration}. \texttt{QuantileTable} builds per-stratum output
-quantiles from logged calls; \texttt{ltt\_select} runs the fixed-sequence
-procedure of Section~\ref{sec:method} given a function that executes $n$ runs
-at a level $\beta$ and returns the failure count; exact binomial $p$-values are
-computed in log space. The router then reserves the calibrated quantile:
+The \texttt{calibrated} mode is part of Baar-Core 0.11.0, an open-source Python
+library that estimates the cost of each LLM call locally, reserves it
+atomically against a budget before any request is sent, and reconciles with the
+provider-reported cost afterwards. Calibrated mode is preflight with the
+reservation lowered to the certified quantile; responses are never cut off by
+the budget, and when nothing is certified it reserves the worst case.
 \begin{verbatim}
 table = QuantileTable.from_records(logged_calls)
 res = ltt_select(betas, run_agent_batch, n=1000, eps=0.05, delta=0.05)
 router = BAARRouter(budget=0.10, on_output_overrun="calibrated",
                     output_quantiles=table, calibration_beta=res)
 \end{verbatim}
-The mode never sets \texttt{max\_tokens}, and it falls back to preflight when
-no level is certified or a stratum has too few samples. One gap remains: the
-router does not yet know whether a step is a tool call or a final answer, so
-it pools both step types per model; per-type strata are available through the
-lower-level \texttt{plan\_output} call. \todo{link release version.}
+The function \texttt{ltt\_select} implements Section~\ref{sec:method} with
+exact binomial $p$-values computed in log space; for replayed runs,
+\texttt{calibrate\_from\_failures} takes the failure counts directly. The library's existing \texttt{overrun\_risk}
+option is per-call quantile reservation at a fixed level; calibrated mode
+chooses that level at the run level. The HotpotQA study exposed that the
+library's prompt counter ignored tool schemas, which providers bill as prompt
+tokens, and that its OpenAI-compatible proxy dropped tool definitions; both are
+fixed in 0.11.0.
 
 % ---------------------------------------------------------------------------
 \section{Limitations}
 
 \begin{itemize}
-  \item \textbf{Exchangeability.} The guarantee assumes deployment tasks come
-  from the calibration distribution. Price changes, model updates or a new
-  task mix require recalibration; anytime-valid monitoring
-  \citep{hultberg2026anytime} is a natural complement.
-  \item \textbf{Calibration cost.} Each tested level costs $n$ real runs at
-  budget $B$. With $n = 1{,}000$ and up to ten levels this is affordable for
-  cheap agents and expensive for long-horizon ones. Smaller $n$ forces more
-  conservative choices.
-  \item \textbf{Coarse policy family.} One scalar $\beta$ shared by all strata
-  is simple to certify but not optimal; richer families need multiple-testing
-  corrections that cost power.
-  \item \textbf{Completion.} As discussed, completion falls as capability
-  rises unless it is included in the loss.
-  \item \textbf{Scope of the real study.} One task family, two models from
-  one provider, and single-model runs; the routing results are simulated. On
-  real traces the certified policy matched, rather than beat, expected-cost
-  reservation in outcomes. Exact replay covers admit/refuse controllers only.
+  \item \textbf{Exchangeability.} The guarantee assumes deployment runs come
+  from the calibration distribution. Price changes, model updates or a new task
+  mix require recalibration; anytime-valid monitoring \citep{hultberg2026anytime}
+  is a natural complement.
+  \item \textbf{Fallback.} Assumption~\ref{ass:fallback} holds for preflight
+  only if prompt estimates, after the margin, are upper bounds. With the
+  pre-fix token counter they were not in 38\% of HotpotQA calls; with tool
+  schemas counted (Baar-Core 0.11.0) the estimate matched billed counts in our
+  checks, but a conservative deployment should use refusal as the fallback.
+  \item \textbf{Simple policy family.} One scalar level shared across models is
+  easy to certify but not optimal, and the stylised simulator controller is not
+  the shipped one; the real-trace studies use the shipped admission rule but no
+  model routing, because routing changes the trajectory and cannot be replayed.
+  \item \textbf{Workloads.} Two real task families, one provider's prices, and
+  re-priced coding-agent costs. The real studies sit at the two extremes of
+  $\kappa$ (about 70 and about 0.02), and the short-horizon runs have 2.6 calls;
+  a workload with long outputs, many calls and tight budgets would test the
+  middle of the range.
+  \item \textbf{Power at tight tolerances.} Validity holds at any $n$, but at
+  $\varepsilon \le 0.02$ and tight budgets 1{,}000 runs can leave the certified
+  policy 15 points of capable-model use below the best safe member of the
+  family.
+  \item \textbf{Mode B} assumes exact prompt counts; with an under-counting
+  estimator the backstop \texttt{max\_tokens} can still let a call overrun.
+  \item \textbf{Completion is not controlled.} Certified policies can refuse
+  more runs than expected-cost reservation. For long-horizon agents, spend on
+  runs that are stopped mid-task is the dominant cost (Section~\ref{sec:swe});
+  certifying a start-of-run admission policy, or the loss ``overrun or
+  incomplete'', uses the same theorem and is the natural next step.
 \end{itemize}
 
 % ---------------------------------------------------------------------------
 \section{Conclusion}
 
-Operators of LLM agents can now state a budget tolerance instead of choosing
-between unbounded risk and worst-case reservation. Per-step tail bounds are
-the obvious way to get such a guarantee, but they spend the risk tolerance on
-tail events that rarely matter. Calibrating whole runs with Learn-then-Test
-gives a finite-sample guarantee from i.i.d.\ runs alone and, in simulation,
-recovers most of the capability that worst-case reservation gives up.
+Run-level budget risk can be certified from i.i.d.\ runs alone, at a cost of a
+few hundred to a few thousand logged runs, without modelling output lengths or
+the dependence between steps, and the certificate held in every setting we
+tested. How much it buys depends on two things. The ratio $\kappa$ decides
+whether output reservation matters at all: when one maximum-length output is a
+large share of the budget, the certified policy recovers capability that
+worst-case reservation and per-step bounds forfeit; when it is a small share,
+overspending is rare under any policy. And the tolerance decides how much the
+run-level search adds over simply certifying expected-cost reservation: little
+at $\varepsilon = 0.05$ on our real workload, a great deal at
+$\varepsilon \le 0.02$. For long-horizon agents the budget's main cost is runs
+stopped before they finish, which calls for certified decisions at the start of
+a run.
 
-\paragraph{Reproducibility.} Simulator, calibration code, the real-model
-harness and all raw results are in the \texttt{research/} directory of
-\url{https://github.com/orvi2014/Baar-Core} \todo{pin commit hash at submission}.
+\paragraph{Reproducibility.} All code, logged runs and analysis outputs are in
+the \texttt{research/} directory of \url{https://github.com/orvi2014/Baar-Core}
+(release v0.11.0 for the library); every table is generated from the analysis
+outputs by \texttt{research/sim/make\_tex.py}.
 
 \paragraph{AI usage.} Generative AI tools (Claude Opus and Claude Sonnet,
-Anthropic, through Claude Code) were used to write simulation and analysis
-code and to draft and edit this paper. The author chose the research question
-and method, checked the proofs, reviewed all code and text, and is
-responsible for the content. All reported numbers are produced by the released
-scripts.
+Anthropic, through Claude Code) were used to write simulation and analysis code
+and to draft and edit this paper. The author chose the research question and
+method, checked the proofs, reviewed all code and text, and is responsible for
+the content.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}

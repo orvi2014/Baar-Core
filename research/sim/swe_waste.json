@@ -1,0 +1,49 @@
+{
+ "prompt_add": 3121,
+ "input_share": 0.9734728574158867,
+ "p50": {
+  "budget": 4.415242500000001,
+  "kappa": 0.03710781457643606,
+  "cannot_finish": 0.5,
+  "preflight": {
+   "cut": 0.5323333333333333,
+   "spend_on_cut": 0.6082556314674111,
+   "overrun": 0.0
+  },
+  "estimate": {
+   "cut": 0.5033333333333333,
+   "spend_on_cut": 0.5836337608531313,
+   "overrun": 0.0
+  }
+ },
+ "p75": {
+  "budget": 6.4199600000000006,
+  "kappa": 0.025520408226842536,
+  "cannot_finish": 0.25,
+  "preflight": {
+   "cut": 0.26566666666666666,
+   "spend_on_cut": 0.3691495565339612,
+   "overrun": 0.0
+  },
+  "estimate": {
+   "cut": 0.251,
+   "spend_on_cut": 0.35442085030534864,
+   "overrun": 0.0
+  }
+ },
+ "p90": {
+  "budget": 8.849506,
+  "kappa": 0.018514027788669788,
+  "cannot_finish": 0.1,
+  "preflight": {
+   "cut": 0.10866666666666666,
+   "spend_on_cut": 0.19073192935475333,
+   "overrun": 0.0
+  },
+  "estimate": {
+   "cut": 0.102,
+   "spend_on_cut": 0.1815951021706853,
+   "overrun": 0.0
+  }
+ }
+}
