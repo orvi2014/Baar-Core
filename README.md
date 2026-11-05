@@ -568,6 +568,21 @@ router = BAARRouter(budget=0.10, on_output_overrun="calibrated",
 
 `ltt_select` tests the levels from most to least conservative with exact binomial p-values (Learn-then-Test) and stops at the first it cannot certify; if none is certified, `calibrated` reserves the worst case. The guarantee assumes future runs look like the calibration runs. Method and results: [research/](research/).
 
+### Certified early stopping
+
+Long agent runs that will blow their budget are otherwise refused only once the money is gone. An `EarlyStopPolicy` checks the run at fixed checkpoints and stops it before the next call when it is predicted to exceed the budget, with a certificate: at most ε of runs that would have finished within budget are stopped (confidence 1 − δ). Fit on one set of logged runs, certify on another:
+
+```python
+from baar import BAARRouter, fit_early_stop, calibrate_early_stop, RunStopped
+
+policy = fit_early_stop(train_runs, budget=5.0, counter_keys=["tool_error"])
+policy = calibrate_early_stop(policy, calibration_runs, eps=0.05, delta=0.05)
+router = BAARRouter(budget=5.0, early_stop=policy)
+router.record_event("tool_error")   # report behaviour as the run goes; RunStopped ends the run early
+```
+
+On 3,000 real coding-agent runs this saved 8–23% of spend at ε = 0.05 (see [research/](research/)).
+
 In `truncate` mode the big model is used only if its *full* response fits, so models with a very large max output (GPT-5, o-series) will usually downgrade unless you set `max_output_tokens`.
 
 **Capping hidden reasoning.** `thinking_budget=4000` limits a reasoning model's thinking without touching the visible answer:

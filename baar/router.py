@@ -21,6 +21,7 @@ from baar.core.router import Router, ModelTier
 from baar.core import caps
 from baar.core.lengths import OutputLengths
 from baar.calibration import resolve_beta
+from baar.early_stop import EarlyStopPolicy, RunState, RunStopped
 from baar.core.awareness import BudgetStatus, WindDown, add_note, DEFAULT_WRAP_UP
 from baar.core.cache import cached_tokens
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
@@ -331,6 +332,7 @@ class BAARConfig:
     output_lengths: Optional[Any] = None  # Optional[OutputLengths]; share to pool learned lengths
     output_quantiles: Optional[Any] = None  # baar.calibration.QuantileTable, for "calibrated"
     calibration_beta: Optional[Any] = None  # float or baar.calibration.CalibrationResult, for "calibrated"
+    early_stop: Optional[Any] = None  # baar.early_stop.EarlyStopPolicy: certified early stopping of the run
     segment_tokens: int = 2000  # "continue": output tokens per segment
     max_segments: int = 8  # "continue": most segments for one answer
     budget_awareness: Any = False  # True, or Callable[[BudgetStatus], str]: add a status line to each call
@@ -422,6 +424,7 @@ class BAARRouter:
         output_lengths: Optional[OutputLengths] = None,
         output_quantiles: Optional[Any] = None,
         calibration_beta: Optional[Any] = None,
+        early_stop: Optional[EarlyStopPolicy] = None,
         segment_tokens: int = 2000,
         max_segments: int = 8,
         budget_awareness: Any = False,
@@ -470,6 +473,7 @@ class BAARRouter:
             output_lengths=output_lengths,
             output_quantiles=output_quantiles,
             calibration_beta=calibration_beta,
+            early_stop=early_stop,
             segment_tokens=segment_tokens,
             max_segments=max_segments,
             budget_awareness=budget_awareness,
@@ -520,6 +524,9 @@ class BAARRouter:
         )
         if config.on_output_overrun == "calibrated":
             self._require_calibration()
+        self._early_stop: Optional[EarlyStopPolicy] = config.early_stop
+        self._events: dict = {}
+        self._events_lock = threading.Lock()
         self._segment_tokens = int(config.segment_tokens)
         self._max_segments = int(config.max_segments)
         self._budget_awareness = config.budget_awareness
@@ -781,6 +788,7 @@ class BAARRouter:
 
         # ── 0. Hard Kill-Switch Pre-check ─────────────────────────────────────
         prompt_tokens_est = tc(self.small_model)
+        self._check_early_stop(prompt_tokens_est)
         try:
             small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit, thinking)
         except BudgetExceeded as e:
@@ -1014,6 +1022,7 @@ class BAARRouter:
 
         # ── 0. Kill-switch pre-check ───────────────────────────────────────────
         prompt_tokens_est = tc(self.small_model)
+        self._check_early_stop(prompt_tokens_est)
         try:
             small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit, thinking)
         except BudgetExceeded as e:
@@ -1343,6 +1352,7 @@ class BAARRouter:
 
         # ── 0. Hard Kill-Switch Pre-check ─────────────────────────────────────
         prompt_tokens_est = tc(self.small_model)
+        self._check_early_stop(prompt_tokens_est)
         try:
             small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit, thinking)
         except BudgetExceeded as e:
@@ -1582,6 +1592,7 @@ class BAARRouter:
         mode, limit, thinking = self._resolve_output_opts(on_output_overrun, max_output_tokens, thinking_budget)
         eot = self._expected_output_tokens
         prompt_tokens_est = tc(self.small_model)
+        self._check_early_stop(prompt_tokens_est)
         try:
             small_plan = self._plan_output(self.small_model, prompt_tokens_est, eot, mode, limit, thinking)
         except BudgetExceeded as e:
@@ -2355,6 +2366,49 @@ class BAARRouter:
         if mode == "preflight" and self._overrun_risk > 0:
             return self._output_lengths.quantile(model, self._overrun_risk)
         return None
+
+    # ── Certified early stopping ──────────────────────────────────────────────
+
+    def record_event(self, name: str, n: float = 1) -> None:
+        """
+        Count a behaviour event of this run (for example a tool error or a
+        repeated command) for the early-stop policy's ``counter_keys``.
+        Thread-safe; counts are cumulative over the router's lifetime.
+        """
+        with self._events_lock:
+            self._events[name] = self._events.get(name, 0) + n
+
+    @property
+    def events(self) -> dict:
+        with self._events_lock:
+            return dict(self._events)
+
+    def run_state(self, next_prompt_tokens: int = 0) -> RunState:
+        """The state an early-stop policy sees before the next call of this run."""
+        steps = list(self._log.steps)
+        return RunState(
+            step=len(steps),
+            spent=float(self.spent),
+            first_prompt_tokens=int(steps[0].prompt_tokens) if steps else int(next_prompt_tokens),
+            context_tokens=int(next_prompt_tokens),
+            output_tokens=[int(s.completion_tokens) for s in steps],
+            counters=self.events,
+        )
+
+    def _check_early_stop(self, next_prompt_tokens: int) -> None:
+        """Raise RunStopped, before any network call, if the certified policy says stop."""
+        policy = self._early_stop
+        if policy is None:
+            return
+        state = self.run_state(next_prompt_tokens)
+        if policy.should_stop(state):
+            score = policy.score(state)
+            raise RunStopped(
+                f"Certified early stop at step {state.step}: score {score:.3f} >= threshold "
+                f"{policy.threshold:.3f} (run predicted to exceed its budget). "
+                "No API call was made.",
+                remaining=self.remaining, score=float(score), threshold=policy.threshold, step=state.step,
+            )
 
     def _require_calibration(self) -> None:
         if not self._calibration_configured:
