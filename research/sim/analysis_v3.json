@@ -1,0 +1,5998 @@
+{
+ "eps": [
+  0.01,
+  0.02,
+  0.05,
+  0.1
+ ],
+ "ns": [
+  100,
+  300,
+  1000,
+  3000
+ ],
+ "delta": 0.05,
+ "reps": 2000,
+ "configs": [
+  {
+   "scenario": "shift",
+   "mode": "A",
+   "budget": 0.01,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 5.75e-05,
+    "0.005": 0.000265,
+    "0.01": 0.0010275,
+    "0.02": 0.00261,
+    "0.03": 0.003695,
+    "0.05": 0.00525,
+    "0.07": 0.00646,
+    "0.1": 0.00776,
+    "0.13": 0.0154975,
+    "0.16": 0.0180875,
+    "0.2": 0.020975,
+    "0.25": 0.024675,
+    "0.3": 0.029315,
+    "0.35": 0.03389,
+    "0.4": 0.03814,
+    "0.5": 0.054895,
+    "0.6": 0.0786525,
+    "0.7": 0.0975625
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 2.9999999242136255e-05,
+    "0.005": 0.0002899999963119626,
+    "0.01": 0.0010499999625608325,
+    "0.02": 0.0026400000788271427,
+    "0.03": 0.0037799999117851257,
+    "0.05": 0.00535999983549118,
+    "0.07": 0.0067900000140070915,
+    "0.1": 0.008030000142753124,
+    "0.13": 0.015010000206530094,
+    "0.16": 0.01711999997496605,
+    "0.2": 0.019740000367164612,
+    "0.25": 0.023499999195337296,
+    "0.3": 0.028270000591874123,
+    "0.35": 0.03328000009059906,
+    "0.4": 0.03757999837398529,
+    "0.5": 0.055160000920295715,
+    "0.6": 0.07861000299453735,
+    "0.7": 0.0973299965262413
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.27045066986249994
+   },
+   "estimate": {
+    "risk": 0.031755,
+    "done": 0.80251,
+    "big": 0.28197808940574326,
+    "util": 0.8996784952499985
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0,
+      "done": 0.99881,
+      "big": 0.0,
+      "util": 0.31256980905000015,
+      "beta": 0.001
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.26961538195610046
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0005,
+       "violation": 0.0005,
+       "violation_clear": 0.0005,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0005,
+       "violation_heldout_raw": 0.0005,
+       "risk_mean": 0.0024093737500000003,
+       "risk_max": 0.0180875,
+       "done": 0.9967925499999999,
+       "big": 0.00010511765293304531,
+       "util": 0.3519925111325624,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00404056875,
+       "risk_max": 0.00776,
+       "done": 0.9957972162499998,
+       "big": 0.0,
+       "util": 0.36311547655213117,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0059803025000000004,
+       "risk_max": 0.00776,
+       "done": 0.9946777074999997,
+       "big": 0.0,
+       "util": 0.36911717962899376,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0154975,
+      "done": 0.8468,
+      "big": 0.21122379900788182,
+      "util": 0.801160606087498,
+      "beta": 0.13
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.002,
+       "violation": 0.004,
+       "violation_clear": 0.004,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.004,
+       "violation_heldout_raw": 0.004,
+       "risk_mean": 0.0048532175000000006,
+       "risk_max": 0.024675,
+       "done": 0.9919441737499999,
+       "big": 0.0051186758394634905,
+       "util": 0.3739402166367499,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0015,
+       "violation": 0.0015,
+       "violation_clear": 0.0015,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0015,
+       "violation_heldout_raw": 0.0015,
+       "risk_mean": 4.7632499999999995e-05,
+       "risk_max": 0.031755,
+       "done": 0.999703765,
+       "big": 0.00042296713410861484,
+       "util": 0.27139451160058115,
+       "fallback": 0.9985
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0045,
+       "violation": 0.0355,
+       "violation_clear": 0.0355,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0355,
+       "violation_heldout_raw": 0.0355,
+       "risk_mean": 0.0098076625,
+       "risk_max": 0.029315,
+       "done": 0.9599356712499998,
+       "big": 0.048669698951977286,
+       "util": 0.47131396860987457,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.001,
+       "violation": 0.053,
+       "violation_clear": 0.053,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.053,
+       "violation_heldout_raw": 0.053,
+       "risk_mean": 0.0137100975,
+       "risk_max": 0.024675,
+       "done": 0.8978724950000001,
+       "big": 0.13772772175587156,
+       "util": 0.6530650309601861,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.27045066986249994,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.03814,
+      "done": 0.7620525,
+      "big": 0.3355724710357098,
+      "util": 0.9581442447499989,
+      "beta": 0.4
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9977999925613403,
+      "big": 0.0,
+      "util": 0.3008669912815094
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.011,
+       "violation": 0.011,
+       "violation_clear": 0.011,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.011,
+       "violation_heldout_raw": 0.011,
+       "risk_mean": 0.015227593749999999,
+       "risk_max": 0.0786525,
+       "done": 0.9144271374999998,
+       "big": 0.1156779947692421,
+       "util": 0.5936848754049554,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0058587974999999995,
+       "risk_max": 0.031755,
+       "done": 0.9635630949999999,
+       "big": 0.05202495749535963,
+       "util": 0.38654320364649347,
+       "fallback": 0.8155
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.018,
+       "violation": 0.018,
+       "violation_clear": 0.018,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.018,
+       "violation_heldout_raw": 0.018,
+       "risk_mean": 0.02773618625,
+       "risk_max": 0.054895,
+       "done": 0.8156721650000001,
+       "big": 0.2593488761030868,
+       "util": 0.8613914303531296,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0135117525,
+       "risk_max": 0.031755,
+       "done": 0.915968005,
+       "big": 0.11998167704214377,
+       "util": 0.5381871095648808,
+       "fallback": 0.5745
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0075,
+       "violation": 0.0075,
+       "violation_clear": 0.0075,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0075,
+       "violation_heldout_raw": 0.0075,
+       "risk_mean": 0.0355365675,
+       "risk_max": 0.054895,
+       "done": 0.7752974650000001,
+       "big": 0.3180651369423856,
+       "util": 0.938510590280205,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.02891292749999999,
+       "risk_max": 0.031755,
+       "done": 0.8201853549999999,
+       "big": 0.25674105040392925,
+       "util": 0.8433626048778177,
+       "fallback": 0.0895
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0005,
+       "violation": 0.0005,
+       "violation_clear": 0.0005,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0005,
+       "violation_heldout_raw": 0.0005,
+       "risk_mean": 0.03796530249999999,
+       "risk_max": 0.054895,
+       "done": 0.7628892325,
+       "big": 0.3345075521867019,
+       "util": 0.956976081224074,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.031739122499999994,
+       "risk_max": 0.031755,
+       "done": 0.8026087449999999,
+       "big": 0.28183710036104037,
+       "util": 0.8993638813373052,
+       "fallback": 0.0005
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.0975625,
+      "done": 0.6808925,
+      "big": 0.44690414343464424,
+      "util": 1.1155636783625007,
+      "beta": 0.7
+     },
+     "perstep": {
+      "risk": 0.0003000000142492354,
+      "done": 0.9911999702453613,
+      "big": 0.0,
+      "util": 0.32725656032562256
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.04252057125,
+       "risk_max": 0.0975625,
+       "done": 0.7687372487499999,
+       "big": 0.3254452070562304,
+       "util": 0.9455376541533363,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.025769182499999994,
+       "risk_max": 0.031755,
+       "done": 0.8397368649999999,
+       "big": 0.22882521955276067,
+       "util": 0.7810690501644554,
+       "fallback": 0.1885
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.06251619625,
+       "risk_max": 0.0975625,
+       "done": 0.7202450662500001,
+       "big": 0.3928861494757193,
+       "util": 1.0360374753008241,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.031739122499999994,
+       "risk_max": 0.031755,
+       "done": 0.8026087449999999,
+       "big": 0.28183710036104037,
+       "util": 0.8993638813373052,
+       "fallback": 0.0005
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.07434689625000002,
+       "risk_max": 0.0975625,
+       "done": 0.7061920275000001,
+       "big": 0.41309192154907737,
+       "util": 1.0664292655886685,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.03175499999999999,
+       "risk_max": 0.031755,
+       "done": 0.8025099999999998,
+       "big": 0.28197808940574326,
+       "util": 0.899678495249999,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0807457025,
+       "risk_max": 0.0975625,
+       "done": 0.6996939150000003,
+       "big": 0.42253526832079524,
+       "util": 1.0812048459386376,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.03175499999999999,
+       "risk_max": 0.031755,
+       "done": 0.8025099999999998,
+       "big": 0.28197808940574326,
+       "util": 0.899678495249999,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "shift",
+   "mode": "A",
+   "budget": 0.02,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 1.5e-05,
+    "0.005": 7.75e-05,
+    "0.01": 0.00034,
+    "0.02": 0.000775,
+    "0.03": 0.0029225,
+    "0.05": 0.0047225,
+    "0.07": 0.006605,
+    "0.1": 0.0092625,
+    "0.13": 0.0173425,
+    "0.16": 0.023935,
+    "0.2": 0.03216,
+    "0.25": 0.041175,
+    "0.3": 0.0496625,
+    "0.35": 0.0565725,
+    "0.4": 0.063375,
+    "0.5": 0.07239,
+    "0.6": 0.077865,
+    "0.7": 0.081855
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.00011000000085914508,
+    "0.01": 0.00033000000985339284,
+    "0.02": 0.0008200000156648457,
+    "0.03": 0.0029899999499320984,
+    "0.05": 0.004720000084489584,
+    "0.07": 0.006670000031590462,
+    "0.1": 0.009220000356435776,
+    "0.13": 0.01779000088572502,
+    "0.16": 0.02459000051021576,
+    "0.2": 0.03365999832749367,
+    "0.25": 0.04244000092148781,
+    "0.3": 0.05073000118136406,
+    "0.35": 0.057259999215602875,
+    "0.4": 0.06363999843597412,
+    "0.5": 0.07293999940156937,
+    "0.6": 0.07773000001907349,
+    "0.7": 0.0816200003027916
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.21944255345625016
+   },
+   "estimate": {
+    "risk": 0.0541225,
+    "done": 0.85656,
+    "big": 0.4535860969060058,
+    "util": 0.8814127835687493
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0092625,
+      "done": 0.91123,
+      "big": 0.3214687809810976,
+      "util": 0.6942730209812491,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.22033944725990295
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.001,
+       "violation": 0.001,
+       "violation_clear": 0.001,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.001,
+       "violation_heldout_raw": 0.001,
+       "risk_mean": 0.0019222775000000004,
+       "risk_max": 0.023935,
+       "done": 0.9808498962500001,
+       "big": 0.07264522484602776,
+       "util": 0.34042597632472166,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0038636725,
+       "risk_max": 0.0092625,
+       "done": 0.953810145,
+       "big": 0.18083763890188384,
+       "util": 0.5011863271828307,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005892727499999999,
+       "risk_max": 0.0092625,
+       "done": 0.9322550899999998,
+       "big": 0.2642213441691179,
+       "util": 0.6199230901511495,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0173425,
+      "done": 0.89816,
+      "big": 0.3614960908501178,
+      "util": 0.753436407487499,
+      "beta": 0.13
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.002,
+       "violation": 0.002,
+       "violation_clear": 0.002,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.002,
+       "violation_heldout_raw": 0.002,
+       "risk_mean": 0.00455635375,
+       "risk_max": 0.023935,
+       "done": 0.9516097975,
+       "big": 0.1844767938737848,
+       "util": 0.5039285389387808,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0035,
+       "violation": 0.0035,
+       "violation_clear": 0.0035,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0035,
+       "violation_heldout_raw": 0.0035,
+       "risk_mean": 0.009708262500000002,
+       "risk_max": 0.023935,
+       "done": 0.9122404412499999,
+       "big": 0.3193968609721954,
+       "util": 0.6925128593084586,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.010882540000000003,
+       "risk_max": 0.0173425,
+       "done": 0.908609465,
+       "big": 0.32949425660983617,
+       "util": 0.7061352799757524,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21944255345625013,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.0496625,
+      "done": 0.8573975,
+      "big": 0.45130989997689896,
+      "util": 0.8749204730624993,
+      "beta": 0.3
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9983999729156494,
+      "big": 0.0,
+      "util": 0.2279440462589264
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.031,
+       "violation": 0.0185,
+       "violation_clear": 0.0185,
+       "ambiguous": 0.0125,
+       "violation_heldout_2se": 0.0185,
+       "violation_heldout_raw": 0.0185,
+       "risk_mean": 0.015639962500000004,
+       "risk_max": 0.081855,
+       "done": 0.9095387475,
+       "big": 0.320692221746741,
+       "util": 0.695090614546043,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.026,
+       "violation": 0.026,
+       "violation_clear": 0.026,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.026,
+       "violation_heldout_raw": 0.026,
+       "risk_mean": 0.0014071849999999998,
+       "risk_max": 0.0541225,
+       "done": 0.99627056,
+       "big": 0.01179323851955615,
+       "util": 0.2366537794391751,
+       "fallback": 0.974
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0265,
+       "violation": 0.0055,
+       "violation_clear": 0.0055,
+       "ambiguous": 0.021,
+       "violation_heldout_2se": 0.0055,
+       "violation_heldout_raw": 0.0055,
+       "risk_mean": 0.02474049625,
+       "risk_max": 0.063375,
+       "done": 0.8868176112499999,
+       "big": 0.38669061380295916,
+       "util": 0.7867171844306086,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.009,
+       "violation": 0.009,
+       "violation_clear": 0.009,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.009,
+       "violation_heldout_raw": 0.009,
+       "risk_mean": 0.0004871025,
+       "risk_max": 0.0541225,
+       "done": 0.9987090399999999,
+       "big": 0.004082274872154052,
+       "util": 0.22540028552726257,
+       "fallback": 0.991
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0285,
+       "violation": 0.004,
+       "violation_clear": 0.004,
+       "ambiguous": 0.0245,
+       "violation_heldout_2se": 0.004,
+       "violation_heldout_raw": 0.004,
+       "risk_mean": 0.03309259625000001,
+       "risk_max": 0.063375,
+       "done": 0.8741374774999998,
+       "big": 0.4158286244578445,
+       "util": 0.8260159668178835,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0105,
+       "violation": 0.0105,
+       "violation_clear": 0.0105,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0105,
+       "violation_heldout_raw": 0.0105,
+       "risk_mean": 0.0005682862499999999,
+       "risk_max": 0.0541225,
+       "done": 0.99849388,
+       "big": 0.00476265401751306,
+       "util": 0.22639324087243134,
+       "fallback": 0.9895
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.025,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.025,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.03802245500000001,
+       "risk_max": 0.0496625,
+       "done": 0.8679593599999998,
+       "big": 0.4290660251459242,
+       "util": 0.8438723758866367,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0015,
+       "violation": 0.0015,
+       "violation_clear": 0.0015,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0015,
+       "violation_heldout_raw": 0.0015,
+       "risk_mean": 8.118375e-05,
+       "risk_max": 0.0541225,
+       "done": 0.99978484,
+       "big": 0.0006803791453590086,
+       "util": 0.22043550880141888,
+       "fallback": 0.9985
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.07239,
+      "done": 0.8526775,
+      "big": 0.4612632542756291,
+      "util": 0.9039097524875,
+      "beta": 0.5
+     },
+     "perstep": {
+      "risk": 9.999999747378752e-05,
+      "done": 0.9956499934196472,
+      "big": 0.0,
+      "util": 0.2315192073583603
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0423286575,
+       "risk_max": 0.081855,
+       "done": 0.8699690562499999,
+       "big": 0.4236012673331123,
+       "util": 0.8400513037110025,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01840165,
+       "risk_max": 0.0541225,
+       "done": 0.9512304,
+       "big": 0.15421927294804197,
+       "util": 0.44451243169449994,
+       "fallback": 0.66
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.06702773499999999,
+       "risk_max": 0.081855,
+       "done": 0.854002005,
+       "big": 0.4573395087110249,
+       "util": 0.8944760762822123,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.048899678749999995,
+       "risk_max": 0.0541225,
+       "done": 0.87040196,
+       "big": 0.4098150385545762,
+       "util": 0.8175326563628931,
+       "fallback": 0.0965
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.07833735874999999,
+       "risk_max": 0.081855,
+       "done": 0.8516377587500001,
+       "big": 0.4602075863337625,
+       "util": 0.9050647734755626,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.05412249999999999,
+       "risk_max": 0.0541225,
+       "done": 0.85656,
+       "big": 0.45358609690600576,
+       "util": 0.8814127835687491,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.081722355,
+       "risk_max": 0.081855,
+       "done": 0.8510352062500002,
+       "big": 0.45999663034669425,
+       "util": 0.9065234637012534,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.05412249999999999,
+       "risk_max": 0.0541225,
+       "done": 0.85656,
+       "big": 0.45358609690600576,
+       "util": 0.8814127835687491,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "shift",
+   "mode": "A",
+   "budget": 0.05,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 7.5e-06,
+    "0.005": 0.0001775,
+    "0.01": 0.00203,
+    "0.02": 0.0059,
+    "0.03": 0.008675,
+    "0.05": 0.0123475,
+    "0.07": 0.015725,
+    "0.1": 0.017705,
+    "0.13": 0.0182975,
+    "0.16": 0.0188,
+    "0.2": 0.01945,
+    "0.25": 0.0201925,
+    "0.3": 0.020795,
+    "0.35": 0.0213225,
+    "0.4": 0.021785,
+    "0.5": 0.0227775,
+    "0.6": 0.023765,
+    "0.7": 0.0246575
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 9.999999747378752e-06,
+    "0.005": 0.0002500000118743628,
+    "0.01": 0.002139999996870756,
+    "0.02": 0.005919999908655882,
+    "0.03": 0.00887999963015318,
+    "0.05": 0.012470000423491001,
+    "0.07": 0.015809999778866768,
+    "0.1": 0.017740000039339066,
+    "0.13": 0.018219999969005585,
+    "0.16": 0.018869999796152115,
+    "0.2": 0.01955999992787838,
+    "0.25": 0.02020999975502491,
+    "0.3": 0.020819999277591705,
+    "0.35": 0.021400000900030136,
+    "0.4": 0.02191000059247017,
+    "0.5": 0.022849999368190765,
+    "0.6": 0.02377999946475029,
+    "0.7": 0.024650000035762787
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.1080649945874999
+   },
+   "estimate": {
+    "risk": 0.021175,
+    "done": 0.970325,
+    "big": 0.5345776781297202,
+    "util": 0.6419974208375001
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.008675,
+      "done": 0.9730025,
+      "big": 0.5179541047627066,
+      "util": 0.6083378614924997,
+      "beta": 0.03
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.10871389508247375
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10806499458749987,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10806499458749987,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.017,
+       "violation": 0.017,
+       "violation_clear": 0.017,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.017,
+       "violation_heldout_raw": 0.017,
+       "risk_mean": 0.0020327225,
+       "risk_max": 0.0246575,
+       "done": 0.9869843987500002,
+       "big": 0.35566399498784074,
+       "util": 0.42275398973149225,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0015,
+       "violation": 0.0015,
+       "violation_clear": 0.0015,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0015,
+       "violation_heldout_raw": 0.0015,
+       "risk_mean": 3.17625e-05,
+       "risk_max": 0.021175,
+       "done": 0.9999554875,
+       "big": 0.0008018665171945804,
+       "util": 0.10886589322687487,
+       "fallback": 0.9985
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.006,
+       "violation": 0.006,
+       "violation_clear": 0.006,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.006,
+       "violation_heldout_raw": 0.006,
+       "risk_mean": 0.0032176074999999997,
+       "risk_max": 0.015725,
+       "done": 0.9838846362500002,
+       "big": 0.4127519321130295,
+       "util": 0.4864323382406122,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10806499458749987,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.001,
+       "violation": 0.001,
+       "violation_clear": 0.001,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.001,
+       "violation_heldout_raw": 0.001,
+       "risk_mean": 0.0052928275000000006,
+       "risk_max": 0.0123475,
+       "done": 0.9804994100000001,
+       "big": 0.4568057924433632,
+       "util": 0.5390556192545721,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10806499458749987,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.017705,
+      "done": 0.9716075,
+      "big": 0.5358909757570395,
+      "util": 0.6413129313950001,
+      "beta": 0.1
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10806499458749987,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10806499458749987,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.011,
+       "violation": 0.011,
+       "violation_clear": 0.01,
+       "ambiguous": 0.001,
+       "violation_heldout_2se": 0.01,
+       "violation_heldout_raw": 0.011,
+       "risk_mean": 0.0047691925,
+       "risk_max": 0.0246575,
+       "done": 0.9820968462500003,
+       "big": 0.4259909009564246,
+       "util": 0.5030852174007885,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.011,
+       "violation": 0.011,
+       "violation_clear": 0.011,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.011,
+       "violation_heldout_raw": 0.011,
+       "risk_mean": 0.00023292499999999998,
+       "risk_max": 0.021175,
+       "done": 0.999673575,
+       "big": 0.005880354459426923,
+       "util": 0.11393825127624987,
+       "fallback": 0.989
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0375,
+       "violation": 0.0375,
+       "violation_clear": 0.029,
+       "ambiguous": 0.0085,
+       "violation_heldout_2se": 0.029,
+       "violation_heldout_raw": 0.0375,
+       "risk_mean": 0.011369975000000001,
+       "risk_max": 0.0246575,
+       "done": 0.9731156537499999,
+       "big": 0.5193014050824518,
+       "util": 0.6141672091632097,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.025,
+       "violation": 0.025,
+       "violation_clear": 0.025,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.025,
+       "violation_heldout_raw": 0.025,
+       "risk_mean": 0.0005293749999999999,
+       "risk_max": 0.021175,
+       "done": 0.9992581250000001,
+       "big": 0.013364441953243005,
+       "util": 0.1214133052437499,
+       "fallback": 0.975
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.034,
+       "violation": 0.034,
+       "violation_clear": 0.0195,
+       "ambiguous": 0.0145,
+       "violation_heldout_2se": 0.0195,
+       "violation_heldout_raw": 0.034,
+       "risk_mean": 0.01454139,
+       "risk_max": 0.023765,
+       "done": 0.9717877237499999,
+       "big": 0.5318689154596057,
+       "util": 0.6323258758656486,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0135,
+       "violation": 0.0135,
+       "violation_clear": 0.0135,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0135,
+       "violation_heldout_raw": 0.0135,
+       "risk_mean": 0.0002858625,
+       "risk_max": 0.021175,
+       "done": 0.9995993875,
+       "big": 0.007216798654751223,
+       "util": 0.11527308234187489,
+       "fallback": 0.9865
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.017705,
+      "done": 0.9716075,
+      "big": 0.5358909757570395,
+      "util": 0.6413129313950001,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9940999746322632,
+      "big": 0.14542493224143982,
+      "util": 0.22106735408306122
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.015073839999999998,
+       "risk_max": 0.0246575,
+       "done": 0.9735948925,
+       "big": 0.5056817636745262,
+       "util": 0.60234496686845,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.007887687499999999,
+       "risk_max": 0.021175,
+       "done": 0.9889460625000002,
+       "big": 0.19913018510332076,
+       "util": 0.30695482336562496,
+       "fallback": 0.6275
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.022745084999999998,
+       "risk_max": 0.0246575,
+       "done": 0.9696488524999998,
+       "big": 0.533697383041299,
+       "util": 0.6408568309698078,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.017172925,
+       "risk_max": 0.021175,
+       "done": 0.9759335750000002,
+       "big": 0.433542496963203,
+       "util": 0.5410841922762499,
+       "fallback": 0.189
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.02465073125,
+       "risk_max": 0.0246575,
+       "done": 0.9690425149999997,
+       "big": 0.5339576264340131,
+       "util": 0.6422605745488104,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021175,
+       "risk_max": 0.021175,
+       "done": 0.9703250000000003,
+       "big": 0.5345776781297202,
+       "util": 0.6419974208374999,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0246575,
+       "risk_max": 0.0246575,
+       "done": 0.9690399999999998,
+       "big": 0.5339565614295839,
+       "util": 0.6422610257825002,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021175,
+       "risk_max": 0.021175,
+       "done": 0.9703250000000003,
+       "big": 0.5345776781297202,
+       "util": 0.6419974208374999,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.017705,
+      "done": 0.9716075,
+      "big": 0.5358909757570395,
+      "util": 0.6413129313950001,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9887999892234802,
+      "big": 0.26171889901161194,
+      "util": 0.3277040123939514
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.024023776249999997,
+       "risk_max": 0.0246575,
+       "done": 0.9692493324999998,
+       "big": 0.5337606451797915,
+       "util": 0.6416586089999141,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01986215,
+       "risk_max": 0.021175,
+       "done": 0.9721648500000003,
+       "big": 0.5014338620856774,
+       "util": 0.6088936104099999,
+       "fallback": 0.062
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0246575,
+       "risk_max": 0.0246575,
+       "done": 0.9690399999999998,
+       "big": 0.5339565614295839,
+       "util": 0.6422610257825002,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021175,
+       "risk_max": 0.021175,
+       "done": 0.9703250000000003,
+       "big": 0.5345776781297202,
+       "util": 0.6419974208374999,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0246575,
+       "risk_max": 0.0246575,
+       "done": 0.9690399999999998,
+       "big": 0.5339565614295839,
+       "util": 0.6422610257825002,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021175,
+       "risk_max": 0.021175,
+       "done": 0.9703250000000003,
+       "big": 0.5345776781297202,
+       "util": 0.6419974208374999,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0246575,
+       "risk_max": 0.0246575,
+       "done": 0.9690399999999998,
+       "big": 0.5339565614295839,
+       "util": 0.6422610257825002,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021175,
+       "risk_max": 0.021175,
+       "done": 0.9703250000000003,
+       "big": 0.5345776781297202,
+       "util": 0.6419974208374999,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "shift",
+   "mode": "A",
+   "budget": 0.1,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.000385,
+    "0.002": 0.00072,
+    "0.005": 0.0021975,
+    "0.01": 0.0028475,
+    "0.02": 0.0033925,
+    "0.03": 0.0034825,
+    "0.05": 0.003655,
+    "0.07": 0.0037575,
+    "0.1": 0.003935,
+    "0.13": 0.0040925,
+    "0.16": 0.0042,
+    "0.2": 0.00434,
+    "0.25": 0.004485,
+    "0.3": 0.0046375,
+    "0.35": 0.0047525,
+    "0.4": 0.0048425,
+    "0.5": 0.005,
+    "0.6": 0.0052125,
+    "0.7": 0.0053525
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0003699999942909926,
+    "0.002": 0.0007699999841861427,
+    "0.005": 0.0020699999295175076,
+    "0.01": 0.002630000002682209,
+    "0.02": 0.0031900000758469105,
+    "0.03": 0.0033199999015778303,
+    "0.05": 0.003470000112429261,
+    "0.07": 0.003590000094845891,
+    "0.1": 0.0037799999117851257,
+    "0.13": 0.003869999898597598,
+    "0.16": 0.00395999988541007,
+    "0.2": 0.004129999782890081,
+    "0.25": 0.004259999841451645,
+    "0.3": 0.0044200001284480095,
+    "0.35": 0.004519999958574772,
+    "0.4": 0.004629999864846468,
+    "0.5": 0.004720000084489584,
+    "0.6": 0.0048500001430511475,
+    "0.7": 0.005049999803304672
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.33279807968490077,
+    "util": 0.21468713102375017
+   },
+   "estimate": {
+    "risk": 0.00472,
+    "done": 0.99516,
+    "big": 0.647663940792444,
+    "util": 0.47410466022874936
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0033925,
+      "done": 0.995625,
+      "big": 0.6483508059315399,
+      "util": 0.4739025951687491,
+      "beta": 0.02
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.3338630199432373,
+      "util": 0.21314013004302979
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33279807968490077,
+       "util": 0.21468713102375017,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33279807968490077,
+       "util": 0.21468713102375017,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0024208649999999995,
+       "risk_max": 0.0053525,
+       "done": 0.9963954062500002,
+       "big": 0.5910658496764802,
+       "util": 0.42162333827472626,
+       "fallback": 0.1025
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00119416,
+       "risk_max": 0.00472,
+       "done": 0.99877548,
+       "big": 0.4124591425451093,
+       "util": 0.28031976591261504,
+       "fallback": 0.747
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.004246409999999999,
+       "risk_max": 0.0053525,
+       "done": 0.9952612812500001,
+       "big": 0.645108253656261,
+       "util": 0.4707556670002374,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0025275600000000007,
+       "risk_max": 0.00472,
+       "done": 0.9974081800000001,
+       "big": 0.5014087483079903,
+       "util": 0.35360521791302735,
+       "fallback": 0.4645
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005302603749999997,
+       "risk_max": 0.0053525,
+       "done": 0.99492480875,
+       "big": 0.6475688984963679,
+       "util": 0.47412633073699867,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.004599640000000001,
+       "risk_max": 0.00472,
+       "done": 0.9952834200000001,
+       "big": 0.639634861334202,
+       "util": 0.46748951323402194,
+       "fallback": 0.0255
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0033925,
+      "done": 0.995625,
+      "big": 0.6483508059315399,
+      "util": 0.4739025951687491,
+      "beta": 0.02
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33279807968490077,
+       "util": 0.21468713102375017,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33279807968490077,
+       "util": 0.21468713102375017,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0042097624999999994,
+       "risk_max": 0.0053525,
+       "done": 0.9953024862500002,
+       "big": 0.6403526003782422,
+       "util": 0.4660931484156612,
+       "fallback": 0.004
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.002968880000000001,
+       "risk_max": 0.00472,
+       "done": 0.9969556400000001,
+       "big": 0.5308487063215456,
+       "util": 0.37786075689369475,
+       "fallback": 0.371
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005351883749999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949077049999998,
+       "big": 0.6475625014295127,
+       "util": 0.4741343725166912,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.0033925,
+      "done": 0.995625,
+      "big": 0.6483508059315399,
+      "util": 0.4739025951687491,
+      "beta": 0.02
+     },
+     "perstep": {
+      "risk": 0.00044999999227002263,
+      "done": 0.9987000226974487,
+      "big": 0.44129037857055664,
+      "util": 0.29013586044311523
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005157962499999998,
+       "risk_max": 0.0053525,
+       "done": 0.99497897375,
+       "big": 0.6463438698541599,
+       "util": 0.4728260528043699,
+       "fallback": 0.001
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0043730800000000005,
+       "risk_max": 0.00472,
+       "done": 0.9955157400000002,
+       "big": 0.6245213000010399,
+       "util": 0.455037471832182,
+       "fallback": 0.0735
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.0033925,
+      "done": 0.995625,
+      "big": 0.6483508059315399,
+      "util": 0.4739025951687491,
+      "beta": 0.02
+     },
+     "perstep": {
+      "risk": 0.0010999999940395355,
+      "done": 0.9976000189781189,
+      "big": 0.5268062949180603,
+      "util": 0.36202383041381836
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.005352499999999998,
+       "risk_max": 0.0053525,
+       "done": 0.9949075,
+       "big": 0.6475624111858961,
+       "util": 0.47413439885749925,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00472,
+       "risk_max": 0.00472,
+       "done": 0.99516,
+       "big": 0.6476639407924443,
+       "util": 0.4741046602287495,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "shift",
+   "mode": "B",
+   "budget": 0.02,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 1e-05,
+    "0.005": 7.75e-05,
+    "0.01": 0.0003225,
+    "0.02": 0.0007775,
+    "0.03": 0.036875,
+    "0.05": 0.05255,
+    "0.07": 0.0668775,
+    "0.1": 0.08147,
+    "0.13": 0.1006025,
+    "0.16": 0.11632,
+    "0.2": 0.1346275,
+    "0.25": 0.15126,
+    "0.3": 0.1653075,
+    "0.35": 0.17445,
+    "0.4": 0.1817875,
+    "0.5": 0.19154,
+    "0.6": 0.197155,
+    "0.7": 0.201135
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 1.9999999494757503e-05,
+    "0.005": 9.000000136438757e-05,
+    "0.01": 0.0003000000142492354,
+    "0.02": 0.0007699999841861427,
+    "0.03": 0.036890000104904175,
+    "0.05": 0.05184999853372574,
+    "0.07": 0.06629999727010727,
+    "0.1": 0.08105000108480453,
+    "0.13": 0.10040000081062317,
+    "0.16": 0.11604999750852585,
+    "0.2": 0.13377000391483307,
+    "0.25": 0.15088999271392822,
+    "0.3": 0.16524000465869904,
+    "0.35": 0.1746699959039688,
+    "0.4": 0.18150000274181366,
+    "0.5": 0.19070999324321747,
+    "0.6": 0.19625000655651093,
+    "0.7": 0.20038999617099762
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.21965011226250034
+   },
+   "estimate": {
+    "risk": 0.170715,
+    "done": 0.8561075,
+    "big": 0.45387554149680487,
+    "util": 0.8078069697062507
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0,
+      "done": 0.9997475,
+      "big": 0.0,
+      "util": 0.2259999310312503,
+      "beta": 0.001
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.21802592277526855
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0006551087500000001,
+       "risk_max": 0.0007775,
+       "done": 0.9991449612500001,
+       "big": 0.0,
+       "util": 0.2332127761797097,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0007765900000000002,
+       "risk_max": 0.0007775,
+       "done": 0.999060635,
+       "big": 0.0,
+       "util": 0.23384111022592532,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0007775000000000002,
+       "risk_max": 0.0007775,
+       "done": 0.99906,
+       "big": 0.0,
+       "util": 0.2338445987812503,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0,
+      "done": 0.9997475,
+      "big": 0.0,
+      "util": 0.2259999310312503,
+      "beta": 0.001
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0007671712500000002,
+       "risk_max": 0.0007775,
+       "done": 0.9990671775000001,
+       "big": 0.0,
+       "util": 0.2338000261941847,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0007775000000000002,
+       "risk_max": 0.0007775,
+       "done": 0.99906,
+       "big": 0.0,
+       "util": 0.2338445987812503,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0007775000000000002,
+       "risk_max": 0.0007775,
+       "done": 0.99906,
+       "big": 0.0,
+       "util": 0.2338445987812503,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.036875,
+      "done": 0.9583325,
+      "big": 0.1626506856946282,
+      "util": 0.45823808425625756,
+      "beta": 0.03
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9986500144004822,
+      "big": 0.0,
+      "util": 0.2253798097372055
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0245,
+       "violation": 0.0245,
+       "violation_clear": 0.0245,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0245,
+       "violation_heldout_raw": 0.0245,
+       "risk_mean": 0.004930831249999999,
+       "risk_max": 0.1006025,
+       "done": 0.99440224375,
+       "big": 0.018716024731247387,
+       "util": 0.2594334942165042,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.019,
+       "violation": 0.019,
+       "violation_clear": 0.019,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.019,
+       "violation_heldout_raw": 0.019,
+       "risk_mean": 0.00934137375,
+       "risk_max": 0.0668775,
+       "done": 0.9894125500000001,
+       "big": 0.038693976435523275,
+       "util": 0.28708106528806443,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.033,
+       "violation": 0.033,
+       "violation_clear": 0.033,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.033,
+       "violation_heldout_raw": 0.033,
+       "risk_mean": 0.023429706249999994,
+       "risk_max": 0.0668775,
+       "done": 0.9735247425000002,
+       "big": 0.10234183244926201,
+       "util": 0.37480785753304235,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.017,
+       "violation": 0.017,
+       "violation_clear": 0.017,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.017,
+       "violation_heldout_raw": 0.017,
+       "risk_mean": 0.036166842500000004,
+       "risk_max": 0.05255,
+       "done": 0.9591428025000005,
+       "big": 0.15960691333441537,
+       "util": 0.45392318379440744,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.08147,
+      "done": 0.9113975,
+      "big": 0.32134002422502034,
+      "util": 0.6533667248375068,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 9.999999747378752e-05,
+      "done": 0.9947500228881836,
+      "big": 0.0,
+      "util": 0.22892434895038605
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.022,
+       "violation": 0.022,
+       "violation_clear": 0.009,
+       "ambiguous": 0.013,
+       "violation_heldout_2se": 0.009,
+       "violation_heldout_raw": 0.022,
+       "risk_mean": 0.036469343749999994,
+       "risk_max": 0.1346275,
+       "done": 0.9596106562500001,
+       "big": 0.15607183908925698,
+       "util": 0.4442723097391023,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0465,
+       "violation": 0.0465,
+       "violation_clear": 0.004,
+       "ambiguous": 0.0425,
+       "violation_heldout_2se": 0.004,
+       "violation_heldout_raw": 0.0465,
+       "risk_mean": 0.0662772975,
+       "risk_max": 0.11632,
+       "done": 0.9273024625,
+       "big": 0.27742450925140544,
+       "util": 0.6025384232621045,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0535,
+       "violation": 0.0535,
+       "violation_clear": 0.001,
+       "ambiguous": 0.0525,
+       "violation_heldout_2se": 0.001,
+       "violation_heldout_raw": 0.0535,
+       "risk_mean": 0.07735470000000001,
+       "risk_max": 0.11632,
+       "done": 0.9158406549999998,
+       "big": 0.31001904353404497,
+       "util": 0.641130858972632,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0385,
+       "violation": 0.0385,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0385,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0385,
+       "risk_mean": 0.08179801125,
+       "risk_max": 0.1006025,
+       "done": 0.9112829099999997,
+       "big": 0.32183339523601046,
+       "util": 0.6541791248515443,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21965011226250034,
+       "fallback": 1.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "valid",
+   "mode": "A",
+   "budget": 0.01,
+   "pool": 200000,
+   "truth_n": 1000000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 1e-06,
+    "0.005": 4e-06,
+    "0.01": 7.6e-05,
+    "0.02": 0.000313,
+    "0.03": 0.000523,
+    "0.05": 0.000901,
+    "0.07": 0.001284,
+    "0.1": 0.001825,
+    "0.13": 0.006198,
+    "0.16": 0.007797,
+    "0.2": 0.010108,
+    "0.25": 0.013541,
+    "0.3": 0.018498,
+    "0.35": 0.023908,
+    "0.4": 0.029438,
+    "0.5": 0.051214,
+    "0.6": 0.081961,
+    "0.7": 0.106489
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.0,
+    "0.01": 5.999999848427251e-05,
+    "0.02": 0.0003699999942909926,
+    "0.03": 0.0005699999746866524,
+    "0.05": 0.0009800000116229057,
+    "0.07": 0.0013000000035390258,
+    "0.1": 0.00171999994199723,
+    "0.13": 0.0061599998734891415,
+    "0.16": 0.00798999983817339,
+    "0.2": 0.009960000403225422,
+    "0.25": 0.01375999953597784,
+    "0.3": 0.018559999763965607,
+    "0.35": 0.02426999993622303,
+    "0.4": 0.02954000048339367,
+    "0.5": 0.05184999853372574,
+    "0.6": 0.08117000013589859,
+    "0.7": 0.10565999895334244
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.26081238828000003
+   },
+   "estimate": {
+    "risk": 0.021042,
+    "done": 0.834854,
+    "big": 0.269648816998399,
+    "util": 0.8404405334050001
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.006198,
+      "done": 0.888048,
+      "big": 0.20471910287175862,
+      "util": 0.7438098534449998,
+      "beta": 0.13
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.26282793283462524
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.26081238828000003,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.26081238828000003,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0075,
+       "violation": 0.029,
+       "violation_clear": 0.0075,
+       "ambiguous": 0.0215,
+       "violation_heldout_2se": 0.0075,
+       "violation_heldout_raw": 0.029,
+       "risk_mean": 0.001907724,
+       "risk_max": 0.018498,
+       "done": 0.9873006960000001,
+       "big": 0.020252847670610565,
+       "util": 0.3932370896263299,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0005,
+       "violation": 0.0005,
+       "violation_clear": 0.0005,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0005,
+       "violation_heldout_raw": 0.0005,
+       "risk_mean": 1.0521000000000001e-05,
+       "risk_max": 0.021042,
+       "done": 0.999917427,
+       "big": 0.0001348244084991995,
+       "util": 0.2611022023525626,
+       "fallback": 0.9995
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0025,
+       "violation": 0.03,
+       "violation_clear": 0.0025,
+       "ambiguous": 0.0275,
+       "violation_heldout_2se": 0.0025,
+       "violation_heldout_raw": 0.03,
+       "risk_mean": 0.0031844144999999997,
+       "risk_max": 0.013541,
+       "done": 0.9693406620000001,
+       "big": 0.052951691459843186,
+       "util": 0.45938918853789984,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.26081238828000003,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0285,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0285,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0285,
+       "risk_mean": 0.005332362,
+       "risk_max": 0.010108,
+       "done": 0.9211560174999999,
+       "big": 0.14284899405411547,
+       "util": 0.6287280327612975,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.26081238828000003,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.018498,
+      "done": 0.840887,
+      "big": 0.2630575263945229,
+      "util": 0.83123064789,
+      "beta": 0.3
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.26081238828000003,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.26081238828000003,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0025,
+       "violation": 0.0025,
+       "violation_clear": 0.0025,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0025,
+       "violation_heldout_raw": 0.0025,
+       "risk_mean": 0.0046636235,
+       "risk_max": 0.029438,
+       "done": 0.9515326420000001,
+       "big": 0.08501278613920632,
+       "util": 0.5191697731238774,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0125,
+       "violation": 0.0125,
+       "violation_clear": 0.0125,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0125,
+       "violation_heldout_raw": 0.0125,
+       "risk_mean": 0.000263025,
+       "risk_max": 0.021042,
+       "done": 0.9979356749999999,
+       "big": 0.0033706102124799876,
+       "util": 0.26805774009406264,
+       "fallback": 0.9875
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0045,
+       "violation": 0.0045,
+       "violation_clear": 0.0045,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0045,
+       "violation_heldout_raw": 0.0045,
+       "risk_mean": 0.011013892,
+       "risk_max": 0.023908,
+       "done": 0.8804496990000001,
+       "big": 0.2127037080320207,
+       "util": 0.7604080456565049,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.019,
+       "violation": 0.019,
+       "violation_clear": 0.019,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.019,
+       "violation_heldout_raw": 0.019,
+       "risk_mean": 0.000399798,
+       "risk_max": 0.021042,
+       "done": 0.996862226,
+       "big": 0.005123327522969581,
+       "util": 0.2718253230373751,
+       "fallback": 0.981
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0005,
+       "violation": 0.0005,
+       "violation_clear": 0.0005,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0005,
+       "violation_heldout_raw": 0.0005,
+       "risk_mean": 0.013614418999999999,
+       "risk_max": 0.023908,
+       "done": 0.8698627880000004,
+       "big": 0.22669083233691553,
+       "util": 0.7829222525551773,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0155,
+       "violation": 0.0155,
+       "violation_clear": 0.0155,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0155,
+       "violation_heldout_raw": 0.0155,
+       "risk_mean": 0.00032615099999999995,
+       "risk_max": 0.021042,
+       "done": 0.9974402370000001,
+       "big": 0.004179556663475184,
+       "util": 0.26979662452943765,
+       "fallback": 0.9845
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.029438,
+      "done": 0.785808,
+      "big": 0.3286206455565137,
+      "util": 0.9037179126600008,
+      "beta": 0.4
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9998999834060669,
+      "big": 0.0,
+      "util": 0.292356938123703
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0225,
+       "violation": 0.0225,
+       "violation_clear": 0.0225,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0225,
+       "violation_heldout_raw": 0.0225,
+       "risk_mean": 0.015174693999999999,
+       "risk_max": 0.106489,
+       "done": 0.8684021815000001,
+       "big": 0.21905598335870377,
+       "util": 0.7517940772092077,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.007533036,
+       "risk_max": 0.021042,
+       "done": 0.940877732,
+       "big": 0.09653427648542685,
+       "util": 0.46831926423475007,
+       "fallback": 0.642
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.019,
+       "violation": 0.019,
+       "violation_clear": 0.019,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.019,
+       "violation_heldout_raw": 0.019,
+       "risk_mean": 0.024471337000000003,
+       "risk_max": 0.051214,
+       "done": 0.8116017719999999,
+       "big": 0.29777589781452835,
+       "util": 0.8691067197539704,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.017128188000000003,
+       "risk_max": 0.021042,
+       "done": 0.865571156,
+       "big": 0.2194941370366967,
+       "util": 0.73262969841175,
+       "fallback": 0.186
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.03,
+       "violation": 0.03,
+       "violation_clear": 0.03,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.03,
+       "violation_heldout_raw": 0.03,
+       "risk_mean": 0.02979584500000001,
+       "risk_max": 0.051214,
+       "done": 0.7858206579999999,
+       "big": 0.32870980360760543,
+       "util": 0.9041003369413286,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021042,
+       "risk_max": 0.021042,
+       "done": 0.8348540000000001,
+       "big": 0.26964881699839893,
+       "util": 0.8404405334049998,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0175,
+       "violation": 0.0175,
+       "violation_clear": 0.0175,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0175,
+       "violation_heldout_raw": 0.0175,
+       "risk_mean": 0.029819080000000008,
+       "risk_max": 0.051214,
+       "done": 0.7850679074999998,
+       "big": 0.3295611859802378,
+       "util": 0.9048867687758761,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021042,
+       "risk_max": 0.021042,
+       "done": 0.8348540000000001,
+       "big": 0.26964881699839893,
+       "util": 0.8404405334049998,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.081961,
+      "done": 0.716368,
+      "big": 0.42100480482238434,
+      "util": 1.029647300725001,
+      "beta": 0.6
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9980999827384949,
+      "big": 0.0,
+      "util": 0.31852421164512634
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0145,
+       "violation": 0.0145,
+       "violation_clear": 0.0145,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0145,
+       "violation_heldout_raw": 0.0145,
+       "risk_mean": 0.039095567,
+       "risk_max": 0.106489,
+       "done": 0.7753956510000001,
+       "big": 0.3427148746500153,
+       "util": 0.9230901817734034,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.019758438000000003,
+       "risk_max": 0.021042,
+       "done": 0.844927906,
+       "big": 0.2532002391614966,
+       "util": 0.8050832165523748,
+       "fallback": 0.061
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0215,
+       "violation": 0.0215,
+       "violation_clear": 0.0215,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0215,
+       "violation_heldout_raw": 0.0215,
+       "risk_mean": 0.059208575,
+       "risk_max": 0.106489,
+       "done": 0.737788729,
+       "big": 0.39080850539398615,
+       "util": 0.9842303292334185,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021042,
+       "risk_max": 0.021042,
+       "done": 0.8348540000000001,
+       "big": 0.26964881699839893,
+       "util": 0.8404405334049998,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0165,
+       "violation": 0.0165,
+       "violation_clear": 0.0165,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0165,
+       "violation_heldout_raw": 0.0165,
+       "risk_mean": 0.07192710549999999,
+       "risk_max": 0.106489,
+       "done": 0.7251958999999999,
+       "big": 0.4083691408152995,
+       "util": 1.010215140387301,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021042,
+       "risk_max": 0.021042,
+       "done": 0.8348540000000001,
+       "big": 0.26964881699839893,
+       "util": 0.8404405334049998,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0035,
+       "violation": 0.0035,
+       "violation_clear": 0.0035,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0035,
+       "violation_heldout_raw": 0.0035,
+       "risk_mean": 0.08137041399999999,
+       "risk_max": 0.106489,
+       "done": 0.7168827234999998,
+       "big": 0.42025704750631726,
+       "util": 1.0284831038451787,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.021042,
+       "risk_max": 0.021042,
+       "done": 0.8348540000000001,
+       "big": 0.26964881699839893,
+       "util": 0.8404405334049998,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "valid",
+   "mode": "A",
+   "budget": 0.02,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.0,
+    "0.01": 1e-05,
+    "0.02": 3.5e-05,
+    "0.03": 0.00026,
+    "0.05": 0.0007925,
+    "0.07": 0.001405,
+    "0.1": 0.0028325,
+    "0.13": 0.0109625,
+    "0.16": 0.0167625,
+    "0.2": 0.02363,
+    "0.25": 0.0318425,
+    "0.3": 0.04061,
+    "0.35": 0.0478925,
+    "0.4": 0.05515,
+    "0.5": 0.06547,
+    "0.6": 0.0716325,
+    "0.7": 0.076495
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.0,
+    "0.01": 0.0,
+    "0.02": 9.999999747378752e-05,
+    "0.03": 0.0003100000030826777,
+    "0.05": 0.0008399999933317304,
+    "0.07": 0.001560000004246831,
+    "0.1": 0.002850000048056245,
+    "0.13": 0.011049999855458736,
+    "0.16": 0.01706000044941902,
+    "0.2": 0.023760000243782997,
+    "0.25": 0.03223000094294548,
+    "0.3": 0.040699999779462814,
+    "0.35": 0.04761999845504761,
+    "0.4": 0.05503999814391136,
+    "0.5": 0.06465999782085419,
+    "0.6": 0.07043000310659409,
+    "0.7": 0.07541999965906143
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.21007422110625026
+   },
+   "estimate": {
+    "risk": 0.0451675,
+    "done": 0.8869375,
+    "big": 0.44560607944530184,
+    "util": 0.855178342756249
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0028325,
+      "done": 0.9405075,
+      "big": 0.311043624919218,
+      "util": 0.6643699047062498,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.2098028063774109
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.034,
+       "violation": 0.034,
+       "violation_clear": 0.034,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.034,
+       "violation_heldout_raw": 0.034,
+       "risk_mean": 0.0019019500000000003,
+       "risk_max": 0.02363,
+       "done": 0.9575866287500001,
+       "big": 0.23965456759968184,
+       "util": 0.5652328454752467,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.009,
+       "violation": 0.009,
+       "violation_clear": 0.009,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.009,
+       "violation_heldout_raw": 0.009,
+       "risk_mean": 0.0026526975000000005,
+       "risk_max": 0.0109625,
+       "done": 0.9426797400000002,
+       "big": 0.30452269380468006,
+       "util": 0.6559931322510718,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0095,
+       "violation": 0.0095,
+       "violation_clear": 0.0095,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0095,
+       "violation_heldout_raw": 0.0095,
+       "risk_mean": 0.002909735000000001,
+       "risk_max": 0.0109625,
+       "done": 0.9403920037500003,
+       "big": 0.3114158037281923,
+       "util": 0.6649574525400499,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0167625,
+      "done": 0.91778,
+      "big": 0.3782174631040572,
+      "util": 0.7641248724249995,
+      "beta": 0.16
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.005,
+       "violation": 0.005,
+       "violation_clear": 0.005,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.005,
+       "violation_heldout_raw": 0.005,
+       "risk_mean": 0.0039255800000000006,
+       "risk_max": 0.0318425,
+       "done": 0.9420770500000002,
+       "big": 0.3049383553080408,
+       "util": 0.657496664314081,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0055,
+       "violation": 0.0055,
+       "violation_clear": 0.0055,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0055,
+       "violation_heldout_raw": 0.0055,
+       "risk_mean": 0.009236251249999999,
+       "risk_max": 0.02363,
+       "done": 0.9306603600000001,
+       "big": 0.3418825994795226,
+       "util": 0.7121472693779994,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.003,
+       "violation": 0.003,
+       "violation_clear": 0.003,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.003,
+       "violation_heldout_raw": 0.003,
+       "risk_mean": 0.0127554725,
+       "risk_max": 0.02363,
+       "done": 0.9250528125,
+       "big": 0.35886164013498467,
+       "util": 0.737811372863168,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.21007422110625026,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.0478925,
+      "done": 0.884825,
+      "big": 0.44903422590161,
+      "util": 0.8600822308124988,
+      "beta": 0.35
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.21613222360610962
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.019,
+       "violation": 0.019,
+       "violation_clear": 0.019,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.019,
+       "violation_heldout_raw": 0.019,
+       "risk_mean": 0.01586696625,
+       "risk_max": 0.076495,
+       "done": 0.92135443625,
+       "big": 0.36345046961356786,
+       "util": 0.7407272865431932,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0027552174999999996,
+       "risk_max": 0.0451675,
+       "done": 0.9931031875000002,
+       "big": 0.02718197084616341,
+       "util": 0.2494255725269002,
+       "fallback": 0.939
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.017,
+       "violation": 0.017,
+       "violation_clear": 0.017,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.017,
+       "violation_heldout_raw": 0.017,
+       "risk_mean": 0.02629075125,
+       "risk_max": 0.06547,
+       "done": 0.90430743375,
+       "big": 0.40745520891048614,
+       "util": 0.8015006225249238,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.003884405,
+       "risk_max": 0.0451675,
+       "done": 0.990276625,
+       "big": 0.03832212283229596,
+       "util": 0.26555317556815017,
+       "fallback": 0.914
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.008,
+       "violation": 0.008,
+       "violation_clear": 0.008,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.008,
+       "violation_heldout_raw": 0.008,
+       "risk_mean": 0.03469680375,
+       "risk_max": 0.05515,
+       "done": 0.8934359774999998,
+       "big": 0.43138133651977056,
+       "util": 0.8328261086074922,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.006413785000000001,
+       "risk_max": 0.0451675,
+       "done": 0.983945125,
+       "big": 0.06327606328123286,
+       "util": 0.30167900638055006,
+       "fallback": 0.858
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0025,
+       "violation": 0.0025,
+       "violation_clear": 0.0025,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0025,
+       "violation_heldout_raw": 0.0025,
+       "risk_mean": 0.039813058750000005,
+       "risk_max": 0.05515,
+       "done": 0.8888733949999998,
+       "big": 0.44088766122039796,
+       "util": 0.8459089505343798,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01623771625,
+       "risk_max": 0.0451675,
+       "done": 0.9593540312500001,
+       "big": 0.16019538556058596,
+       "util": 0.44198915283942486,
+       "fallback": 0.6405
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.06547,
+      "done": 0.8830375,
+      "big": 0.45360922750055693,
+      "util": 0.8781942190312492,
+      "beta": 0.5
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9969000220298767,
+      "big": 0.0,
+      "util": 0.21977145969867706
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0445175375,
+       "risk_max": 0.076495,
+       "done": 0.8920480312499999,
+       "big": 0.4334189974507734,
+       "util": 0.84125669392943,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.023645186250000002,
+       "risk_max": 0.0451675,
+       "done": 0.9408117812500002,
+       "big": 0.23327478258961545,
+       "util": 0.5477862287900246,
+       "fallback": 0.4765
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.066586415,
+       "risk_max": 0.076495,
+       "done": 0.88287345125,
+       "big": 0.45185559219458676,
+       "util": 0.8753858188825145,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.044128647500000014,
+       "risk_max": 0.0451675,
+       "done": 0.8895379375,
+       "big": 0.4353571396180597,
+       "util": 0.8403409479582988,
+       "fallback": 0.023
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.07551477625,
+       "risk_max": 0.076495,
+       "done": 0.881598405,
+       "big": 0.452392594563423,
+       "util": 0.8807273008051554,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.04516750000000002,
+       "risk_max": 0.0451675,
+       "done": 0.8869375000000002,
+       "big": 0.44560607944530173,
+       "util": 0.8551783427562487,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.07649256874999999,
+       "risk_max": 0.076495,
+       "done": 0.88144791,
+       "big": 0.45226959155138063,
+       "util": 0.8809425065603927,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.04516750000000002,
+       "risk_max": 0.0451675,
+       "done": 0.8869375000000002,
+       "big": 0.44560607944530173,
+       "util": 0.8551783427562487,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "valid",
+   "mode": "A",
+   "budget": 0.05,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.00015,
+    "0.01": 0.0010175,
+    "0.02": 0.00296,
+    "0.03": 0.004165,
+    "0.05": 0.006145,
+    "0.07": 0.0080925,
+    "0.1": 0.0091975,
+    "0.13": 0.0094425,
+    "0.16": 0.009645,
+    "0.2": 0.00992,
+    "0.25": 0.01032,
+    "0.3": 0.010645,
+    "0.35": 0.0110375,
+    "0.4": 0.0113675,
+    "0.5": 0.0119925,
+    "0.6": 0.0127775,
+    "0.7": 0.0135725
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.00013000000035390258,
+    "0.01": 0.0009699999936856329,
+    "0.02": 0.0028099999763071537,
+    "0.03": 0.004279999993741512,
+    "0.05": 0.0065100002102553844,
+    "0.07": 0.008679999969899654,
+    "0.1": 0.009859999641776085,
+    "0.13": 0.010089999996125698,
+    "0.16": 0.010259999893605709,
+    "0.2": 0.010569999925792217,
+    "0.25": 0.010859999805688858,
+    "0.3": 0.01116000022739172,
+    "0.35": 0.011380000039935112,
+    "0.4": 0.011819999665021896,
+    "0.5": 0.012509999796748161,
+    "0.6": 0.013150000013411045,
+    "0.7": 0.014019999653100967
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.10130385351
+   },
+   "estimate": {
+    "risk": 0.01091,
+    "done": 0.98648,
+    "big": 0.5306057713176471,
+    "util": 0.626312246155
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0091975,
+      "done": 0.9869825,
+      "big": 0.5318606381408681,
+      "util": 0.6256325692525002,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.102859728038311
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10130385350999999,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10130385350999999,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.048,
+       "violation": 0.0365,
+       "violation_clear": 0.0365,
+       "ambiguous": 0.0065,
+       "violation_heldout_2se": 0.0365,
+       "violation_heldout_raw": 0.0365,
+       "risk_mean": 0.0024638150000000003,
+       "risk_max": 0.0135725,
+       "done": 0.9928032124999999,
+       "big": 0.40607474682987277,
+       "util": 0.4697485068282738,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0335,
+       "violation": 0.0335,
+       "violation_clear": 0.0335,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0335,
+       "violation_heldout_raw": 0.0335,
+       "risk_mean": 0.00036548500000000003,
+       "risk_max": 0.01091,
+       "done": 0.99954708,
+       "big": 0.017775293339141178,
+       "util": 0.11889163466360748,
+       "fallback": 0.9665
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0265,
+       "violation": 0.0165,
+       "violation_clear": 0.0165,
+       "ambiguous": 0.001,
+       "violation_heldout_2se": 0.0165,
+       "violation_heldout_raw": 0.0165,
+       "risk_mean": 0.003952305,
+       "risk_max": 0.0135725,
+       "done": 0.98964888875,
+       "big": 0.48368265117748205,
+       "util": 0.5602884861380213,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0135,
+       "violation": 0.0135,
+       "violation_clear": 0.0135,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0135,
+       "violation_heldout_raw": 0.0135,
+       "risk_mean": 0.000147285,
+       "risk_max": 0.01091,
+       "done": 0.99981748,
+       "big": 0.007163177912788236,
+       "util": 0.10839146681070748,
+       "fallback": 0.9865
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.03,
+       "violation": 0.014,
+       "violation_clear": 0.014,
+       "ambiguous": 0.002,
+       "violation_heldout_2se": 0.014,
+       "violation_heldout_raw": 0.014,
+       "risk_mean": 0.00568425625,
+       "risk_max": 0.0127775,
+       "done": 0.9873206175,
+       "big": 0.5206764303654632,
+       "util": 0.6052887438414999,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.007,
+       "violation": 0.007,
+       "violation_clear": 0.007,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.007,
+       "violation_heldout_raw": 0.007,
+       "risk_mean": 7.636999999999999e-05,
+       "risk_max": 0.01091,
+       "done": 0.99990536,
+       "big": 0.0037142403992235294,
+       "util": 0.10497891225851498,
+       "fallback": 0.993
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0091975,
+      "done": 0.9869825,
+      "big": 0.5318606381408681,
+      "util": 0.6256325692525002,
+      "beta": 0.1
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10130385350999999,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.10130385350999999,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0053327625,
+       "risk_max": 0.0135725,
+       "done": 0.9893329949999999,
+       "big": 0.48312449322004225,
+       "util": 0.5618050153049975,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00157104,
+       "risk_max": 0.01091,
+       "done": 0.99805312,
+       "big": 0.07640723106974118,
+       "util": 0.17690506205088002,
+       "fallback": 0.856
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.011223463749999999,
+       "risk_max": 0.0135725,
+       "done": 0.98628484125,
+       "big": 0.5297750201735659,
+       "util": 0.6243689986043487,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.007140595000000001,
+       "risk_max": 0.01091,
+       "done": 0.9911511600000001,
+       "big": 0.34728147732740006,
+       "util": 0.4449218464961525,
+       "fallback": 0.3455
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013275162499999996,
+       "risk_max": 0.0135725,
+       "done": 0.9858027650000001,
+       "big": 0.5300769144174342,
+       "util": 0.6265355569460161,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.010784535000000001,
+       "risk_max": 0.01091,
+       "done": 0.9866354800000001,
+       "big": 0.5245038049474945,
+       "util": 0.6202746496395826,
+       "fallback": 0.0115
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.0091975,
+      "done": 0.9869825,
+      "big": 0.5318606381408681,
+      "util": 0.6256325692525002,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9986000061035156,
+      "big": 0.14295823872089386,
+      "util": 0.20237475633621216
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01088264625,
+       "risk_max": 0.0135725,
+       "done": 0.9866211612500001,
+       "big": 0.5214785255078983,
+       "util": 0.6135008337348186,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.007440620000000001,
+       "risk_max": 0.01091,
+       "done": 0.9907793600000002,
+       "big": 0.36187313603863536,
+       "util": 0.45935957729389004,
+       "fallback": 0.318
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013517846249999995,
+       "risk_max": 0.0135725,
+       "done": 0.9857377725000004,
+       "big": 0.53001940219641,
+       "util": 0.626522810044231,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01084454,
+       "risk_max": 0.01091,
+       "done": 0.9865611200000001,
+       "big": 0.5274221366897414,
+       "util": 0.6231621957991301,
+       "fallback": 0.006
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013572499999999994,
+       "risk_max": 0.0135725,
+       "done": 0.9857250000000004,
+       "big": 0.530021956330666,
+       "util": 0.6265638797949998,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01091,
+       "risk_max": 0.01091,
+       "done": 0.9864800000000001,
+       "big": 0.5306057713176474,
+       "util": 0.6263122461550001,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013572499999999994,
+       "risk_max": 0.0135725,
+       "done": 0.9857250000000004,
+       "big": 0.530021956330666,
+       "util": 0.6265638797949998,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01091,
+       "risk_max": 0.01091,
+       "done": 0.9864800000000001,
+       "big": 0.5306057713176474,
+       "util": 0.6263122461550001,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.0091975,
+      "done": 0.9869825,
+      "big": 0.5318606381408681,
+      "util": 0.6256325692525002,
+      "beta": 0.1
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9973000288009644,
+      "big": 0.25842785835266113,
+      "util": 0.30674272775650024
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013540494999999993,
+       "risk_max": 0.0135725,
+       "done": 0.9857330475000003,
+       "big": 0.5300243278871378,
+       "util": 0.6265468390171024,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01086636,
+       "risk_max": 0.01091,
+       "done": 0.9865340800000001,
+       "big": 0.5284833482323767,
+       "util": 0.6242122125844202,
+       "fallback": 0.004
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013572499999999994,
+       "risk_max": 0.0135725,
+       "done": 0.9857250000000004,
+       "big": 0.530021956330666,
+       "util": 0.6265638797949998,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01091,
+       "risk_max": 0.01091,
+       "done": 0.9864800000000001,
+       "big": 0.5306057713176474,
+       "util": 0.6263122461550001,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013572499999999994,
+       "risk_max": 0.0135725,
+       "done": 0.9857250000000004,
+       "big": 0.530021956330666,
+       "util": 0.6265638797949998,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01091,
+       "risk_max": 0.01091,
+       "done": 0.9864800000000001,
+       "big": 0.5306057713176474,
+       "util": 0.6263122461550001,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.013572499999999994,
+       "risk_max": 0.0135725,
+       "done": 0.9857250000000004,
+       "big": 0.530021956330666,
+       "util": 0.6265638797949998,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.01091,
+       "risk_max": 0.01091,
+       "done": 0.9864800000000001,
+       "big": 0.5306057713176474,
+       "util": 0.6263122461550001,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "valid",
+   "mode": "A",
+   "budget": 0.1,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 9.25e-05,
+    "0.002": 0.0002025,
+    "0.005": 0.00076,
+    "0.01": 0.0009425,
+    "0.02": 0.0010775,
+    "0.03": 0.001085,
+    "0.05": 0.00109,
+    "0.07": 0.0011,
+    "0.1": 0.00112,
+    "0.13": 0.0011375,
+    "0.16": 0.0011725,
+    "0.2": 0.0012025,
+    "0.25": 0.0012475,
+    "0.3": 0.0012875,
+    "0.35": 0.001335,
+    "0.4": 0.0013775,
+    "0.5": 0.0014475,
+    "0.6": 0.0015375,
+    "0.7": 0.001635
+   },
+   "risk_curve_cal": {
+    "0.001": 7.000000186963007e-05,
+    "0.002": 0.00014000000373926014,
+    "0.005": 0.0006300000241026282,
+    "0.01": 0.0008299999753944576,
+    "0.02": 0.0009399999980814755,
+    "0.03": 0.0009500000160187483,
+    "0.05": 0.0009699999936856329,
+    "0.07": 0.0009899999713525176,
+    "0.1": 0.001019999966956675,
+    "0.13": 0.0010400000028312206,
+    "0.16": 0.0010900000343099236,
+    "0.2": 0.001129999989643693,
+    "0.25": 0.0011599999852478504,
+    "0.3": 0.001180000021122396,
+    "0.35": 0.0012400000123307109,
+    "0.4": 0.0013299999991431832,
+    "0.5": 0.0014100000262260437,
+    "0.6": 0.0015399999683722854,
+    "0.7": 0.001610000035725534
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.3342054607435128,
+    "util": 0.20467458650999998
+   },
+   "estimate": {
+    "risk": 0.0013225,
+    "done": 0.998835,
+    "big": 0.653353765718664,
+    "util": 0.46087063772874953
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0010775,
+      "done": 0.9989225,
+      "big": 0.6538677357602045,
+      "util": 0.4607251064162495,
+      "beta": 0.02
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.33029788732528687,
+      "util": 0.20496563613414764
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33420546074351276,
+       "util": 0.20467458650999995,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33420546074351276,
+       "util": 0.20467458650999995,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.00127551375,
+       "risk_max": 0.001635,
+       "done": 0.99883494,
+       "big": 0.6389545356460687,
+       "util": 0.44724539577052597,
+       "fallback": 0.02
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0009290562500000002,
+       "risk_max": 0.0013225,
+       "done": 0.9991815874999997,
+       "big": 0.5584071449885564,
+       "util": 0.38465231249117166,
+       "fallback": 0.2975
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016257837500000003,
+       "risk_max": 0.001635,
+       "done": 0.9987103174999999,
+       "big": 0.6532711861309458,
+       "util": 0.46087404873265153,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013099362500000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988460674999999,
+       "big": 0.6503218568214001,
+       "util": 0.4584367752421716,
+       "fallback": 0.0095
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0010775,
+      "done": 0.9989225,
+      "big": 0.6538677357602045,
+      "util": 0.4607251064162495,
+      "beta": 0.02
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33420546074351276,
+       "util": 0.20467458650999995,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.33420546074351276,
+       "util": 0.20467458650999995,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0015785250000000001,
+       "risk_max": 0.001635,
+       "done": 0.99872379125,
+       "big": 0.6525353571744982,
+       "util": 0.46003441150706975,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0012530687500000007,
+       "risk_max": 0.0013225,
+       "done": 0.9988961624999997,
+       "big": 0.6365984797074685,
+       "util": 0.44742034503976524,
+       "fallback": 0.0525
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.0010775,
+      "done": 0.9989225,
+      "big": 0.6538677357602045,
+      "util": 0.4607251064162495,
+      "beta": 0.02
+     },
+     "perstep": {
+      "risk": 0.0002500000118743628,
+      "done": 0.9998000264167786,
+      "big": 0.4354642927646637,
+      "util": 0.2751339077949524
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016277712500000002,
+       "risk_max": 0.001635,
+       "done": 0.9987096125,
+       "big": 0.6531658130823954,
+       "util": 0.4607633330739866,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013132425000000004,
+       "risk_max": 0.0013225,
+       "done": 0.9988431549999998,
+       "big": 0.6511197275838378,
+       "util": 0.4590772653702184,
+       "fallback": 0.007
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.0010775,
+      "done": 0.9989225,
+      "big": 0.6538677357602045,
+      "util": 0.4607251064162495,
+      "beta": 0.02
+     },
+     "perstep": {
+      "risk": 0.00039999998989515007,
+      "done": 0.9995499849319458,
+      "big": 0.5233067870140076,
+      "util": 0.346746027469635
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0016350000000000002,
+       "risk_max": 0.001635,
+       "done": 0.9987075,
+       "big": 0.6532790951554823,
+       "util": 0.4608916488662497,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0013225000000000008,
+       "risk_max": 0.0013225,
+       "done": 0.9988349999999998,
+       "big": 0.6533537657186639,
+       "util": 0.46087063772874964,
+       "fallback": 0.0
+      }
+     }
+    }
+   }
+  },
+  {
+   "scenario": "valid",
+   "mode": "B",
+   "budget": 0.02,
+   "pool": 200000,
+   "truth_n": 400000,
+   "risk_curve": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.0,
+    "0.01": 1.75e-05,
+    "0.02": 7.25e-05,
+    "0.03": 0.0170375,
+    "0.05": 0.0304575,
+    "0.07": 0.04001,
+    "0.1": 0.0509225,
+    "0.13": 0.0685975,
+    "0.16": 0.0829725,
+    "0.2": 0.09969,
+    "0.25": 0.115865,
+    "0.3": 0.12999,
+    "0.35": 0.139345,
+    "0.4": 0.14712,
+    "0.5": 0.157635,
+    "0.6": 0.16366,
+    "0.7": 0.168365
+   },
+   "risk_curve_cal": {
+    "0.001": 0.0,
+    "0.002": 0.0,
+    "0.005": 0.0,
+    "0.01": 0.0,
+    "0.02": 5.999999848427251e-05,
+    "0.03": 0.016790000721812248,
+    "0.05": 0.030169999226927757,
+    "0.07": 0.039820000529289246,
+    "0.1": 0.05121000111103058,
+    "0.13": 0.06853999942541122,
+    "0.16": 0.08278000354766846,
+    "0.2": 0.09915000200271606,
+    "0.25": 0.11450999975204468,
+    "0.3": 0.12852999567985535,
+    "0.35": 0.1381099969148636,
+    "0.4": 0.1458200067281723,
+    "0.5": 0.15618999302387238,
+    "0.6": 0.16256000101566315,
+    "0.7": 0.1671600043773651
+   },
+   "preflight": {
+    "risk": 0.0,
+    "done": 1.0,
+    "big": 0.0,
+    "util": 0.20955708502499976
+   },
+   "estimate": {
+    "risk": 0.1353275,
+    "done": 0.8868525,
+    "big": 0.4459146865969049,
+    "util": 0.8091004048062469
+   },
+   "runs": {
+    "0.01": {
+     "oracle": {
+      "risk": 0.0,
+      "done": 0.9999775,
+      "big": 0.0,
+      "util": 0.2152814801249998,
+      "beta": 0.001
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 1.0,
+      "big": 0.0,
+      "util": 0.2101638913154602
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.0055,
+       "violation": 0.0055,
+       "violation_clear": 0.0055,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0055,
+       "violation_heldout_raw": 0.0055,
+       "risk_mean": 0.00016473499999999997,
+       "risk_max": 0.0170375,
+       "done": 0.9997137599999997,
+       "big": 0.0008696343069152925,
+       "util": 0.22339844152432795,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0005,
+       "violation": 0.0005,
+       "violation_clear": 0.0005,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0005,
+       "violation_heldout_raw": 0.0005,
+       "risk_mean": 8.09825e-05,
+       "risk_max": 0.0170375,
+       "done": 0.9998147587499997,
+       "big": 7.90576642650266e-05,
+       "util": 0.22233760370515915,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 7.250000000000001e-05,
+       "risk_max": 7.25e-05,
+       "done": 0.9998249999999997,
+       "big": 0.0,
+       "util": 0.22222844544374978,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.02": {
+     "oracle": {
+      "risk": 0.0170375,
+      "done": 0.9793425,
+      "big": 0.1581153285300532,
+      "util": 0.4405449682625041,
+      "beta": 0.03
+     },
+     "perstep": null,
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.002,
+       "violation": 0.002,
+       "violation_clear": 0.002,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.002,
+       "violation_heldout_raw": 0.002,
+       "risk_mean": 0.00076572375,
+       "risk_max": 0.04001,
+       "done": 0.9989890949999997,
+       "big": 0.006342086682546068,
+       "util": 0.23098742627606866,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.002422152500000001,
+       "risk_max": 0.0170375,
+       "done": 0.9969881737499995,
+       "big": 0.021898973001412365,
+       "util": 0.2524652838541473,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0058999775,
+       "risk_max": 0.0170375,
+       "done": 0.9927892612499996,
+       "big": 0.05431261535007327,
+       "util": 0.2972201710319919,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.05": {
+     "oracle": {
+      "risk": 0.04001,
+      "done": 0.95254,
+      "big": 0.27646586803315937,
+      "util": 0.6030420501812538,
+      "beta": 0.07
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9999499917030334,
+      "big": 0.0,
+      "util": 0.2166343480348587
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.0365,
+       "violation": 0.0365,
+       "violation_clear": 0.0365,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0365,
+       "violation_heldout_raw": 0.0365,
+       "risk_mean": 0.012674955,
+       "risk_max": 0.0829725,
+       "done": 0.9848806962499996,
+       "big": 0.1005197494070498,
+       "util": 0.36091840129688,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.024,
+       "violation": 0.024,
+       "violation_clear": 0.024,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.024,
+       "violation_heldout_raw": 0.024,
+       "risk_mean": 0.02350499875,
+       "risk_max": 0.0685975,
+       "done": 0.9718314949999998,
+       "big": 0.18855099726857985,
+       "util": 0.48298015850299736,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.0265,
+       "violation": 0.0265,
+       "violation_clear": 0.0265,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0265,
+       "violation_heldout_raw": 0.0265,
+       "risk_mean": 0.033875061250000005,
+       "risk_max": 0.0509225,
+       "done": 0.9596407425,
+       "big": 0.2487068212631458,
+       "util": 0.5662527642920443,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0255,
+       "violation": 0.0255,
+       "violation_clear": 0.0255,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0255,
+       "violation_heldout_raw": 0.0255,
+       "risk_mean": 0.038903156249999994,
+       "risk_max": 0.0509225,
+       "done": 0.9538326700000003,
+       "big": 0.2714468558180685,
+       "util": 0.596394526647457,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     }
+    },
+    "0.1": {
+     "oracle": {
+      "risk": 0.09969,
+      "done": 0.90504,
+      "big": 0.40696078835100535,
+      "util": 0.7628433276562495,
+      "beta": 0.2
+     },
+     "perstep": {
+      "risk": 0.0,
+      "done": 0.9965500235557556,
+      "big": 0.0,
+      "util": 0.22035865485668182
+     },
+     "n100": {
+      "ltt": {
+       "violation_calpop": 0.006,
+       "violation": 0.006,
+       "violation_clear": 0.006,
+       "ambiguous": 0.0145,
+       "violation_heldout_2se": 0.006,
+       "violation_heldout_raw": 0.006,
+       "risk_mean": 0.042605728749999995,
+       "risk_max": 0.157635,
+       "done": 0.9520562324999999,
+       "big": 0.26635879566720655,
+       "util": 0.5863796317846312,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0015,
+       "violation": 0.0015,
+       "violation_clear": 0.0015,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0015,
+       "violation_heldout_raw": 0.0015,
+       "risk_mean": 0.00020299124999999997,
+       "risk_max": 0.1353275,
+       "done": 0.9998302787500001,
+       "big": 0.0006688720298953574,
+       "util": 0.21045640000467158,
+       "fallback": 0.9985
+      }
+     },
+     "n300": {
+      "ltt": {
+       "violation_calpop": 0.006,
+       "violation": 0.006,
+       "violation_clear": 0.006,
+       "ambiguous": 0.0445,
+       "violation_heldout_2se": 0.006,
+       "violation_heldout_raw": 0.006,
+       "risk_mean": 0.06529296,
+       "risk_max": 0.12999,
+       "done": 0.93097484375,
+       "big": 0.34082483076796166,
+       "util": 0.6839605490648237,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n1000": {
+      "ltt": {
+       "violation_calpop": 0.002,
+       "violation": 0.002,
+       "violation_clear": 0.002,
+       "ambiguous": 0.0655,
+       "violation_heldout_2se": 0.002,
+       "violation_heldout_raw": 0.002,
+       "risk_mean": 0.07814089375000001,
+       "risk_max": 0.115865,
+       "done": 0.9215929750000001,
+       "big": 0.3684510379097195,
+       "util": 0.7200386539151136,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     },
+     "n3000": {
+      "ltt": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0635,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.08327937375,
+       "risk_max": 0.09969,
+       "done": 0.9177900350000002,
+       "big": 0.37851851106490814,
+       "util": 0.7322988787366821,
+       "fallback": 0.0
+      },
+      "certified_estimate": {
+       "violation_calpop": 0.0,
+       "violation": 0.0,
+       "violation_clear": 0.0,
+       "ambiguous": 0.0,
+       "violation_heldout_2se": 0.0,
+       "violation_heldout_raw": 0.0,
+       "risk_mean": 0.0,
+       "risk_max": 0.0,
+       "done": 1.0,
+       "big": 0.0,
+       "util": 0.20955708502499973,
+       "fallback": 1.0
+      }
+     }
+    }
+   }
+  }
+ ]
+}

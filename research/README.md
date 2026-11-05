@@ -1,26 +1,47 @@
-# Run-level budget guarantees for LLM agents
+# Run-level budget risk for LLM agents
 
-Code, data and paper for *Bounding the Probability That an LLM Agent Exceeds Its
-Budget: Run-Level Risk Control with Learn-then-Test* (Robat Das).
+Code, data and paper for *How Often Will My Agent Overspend? Certifying
+Run-Level Budget Risk for LLM Agents* (Robat Das). The method is the
+`calibrated` output mode of Baar-Core (v0.11.0+).
+
+Every table in the paper is generated from the analysis outputs by
+`sim/make_tex.py`; no number is copied by hand.
+
+## Layout
 
 | Path | What it is |
 |---|---|
 | `preprint/main.tex`, `refs.bib`, `main.pdf` | The paper |
-| `sim/sim_thm1.py` | Synthetic agent simulator; estimate / preflight / per-step baselines |
-| `sim/sim_ltt.py` | Learn-then-Test calibration over the policy family |
-| `sim/make_tables.py` → `sim/tables.jsonl` | Tables 1–2 (simulation) |
-| `sim/sim_ltt_repeat_par.py` → `sim/ltt_repeat.jsonl` | 500-calibration validity check |
-| `sim/pilot.py` → `sim/pilot_log.jsonl` | Real-model study: ReAct agent on HotpotQA, gpt-4o-mini / gpt-4o |
-| `sim/real_replay.py` → `sim/real_results.json` | Exact replay + Learn-then-Test on real runs (Table 3) |
+| `preprint/tables/*.tex`, `preprint/figs/*.pdf` | Generated tables and figures |
+| `sim/sim_thm1.py` | Simulator (two models, growing context, stylised controller) and the per-step baseline |
+| `sim/sim_v2.py` | 200,000-task pools per setting, every policy run on every task |
+| `sim/sim_truth.py` → `sim/truth.json` | Ground truth: every policy's risk on 400k–1M fresh tasks per setting |
+| `sim/analysis_v2.py` → `sim/analysis_v3.json` | 2,000 calibrations per setting, scored against the ground truth (Tables 1–2, Figures 1–2) |
+| `sim/pilot.py` → `sim/pilot_log.jsonl` | Real HotpotQA runs, gpt-4o-mini and gpt-4o ($1.85) |
+| `sim/real_v2.py` → `sim/real_v3.json` | Exact replay of Baar-Core's admission rule, 200 held-out splits, budgets from the table split, same prompt margin for every policy (Table 3) |
+| `swe/` | 3,000 OpenHands trajectories on SWE-rebench, converted to the same log format (see `swe/README.md`) |
+| `sim/real_v2.py --prompt-add 3121` → `sim/swe_v3.json` | The same analysis on the coding-agent runs, with tool-schema tokens added (Table 4) |
+| `sim/swe_waste.py` → `sim/swe_waste.json` | Runs stopped mid-task and the spend they absorb (Section 8) |
+| `sim/analysis_v2.json`, `sim/real_v2.json`, `sim/swe_v2.json` | Earlier outputs superseded after the second review, kept for the record |
+| `sim/sim_ltt.py`, `sim_ltt_repeat_par.py`, `make_tables.py`, `ltt_repeat.jsonl`, `tables.jsonl`, `real_replay.py`, `real_results.json` | First-version analyses, kept for the record |
 
-Reproduce (Python 3.12, numpy, scipy):
+## Reproduce
+
+Python 3.12 with numpy, scipy, matplotlib and `baar-core>=0.11.0`.
 
 ```bash
 cd research/sim
-python make_tables.py tables.jsonl            # simulation tables
-python sim_ltt_repeat_par.py 500              # validity check
-python real_replay.py pilot_log.jsonl real_results.json   # real-trace analysis (no API calls)
+python sim_v2.py pool 200000                       # ~45M simulated runs
+python sim_truth.py truth.json 400000              # ground truth (one setting in the paper used 1,000,000)
+python analysis_v2.py pool analysis_v3.json truth.json   # 320,000 calibrations
+python real_v2.py pilot_log.jsonl real_v3.json
+python real_v2.py ../swe/swe_log.jsonl.gz swe_v3.json --prompt-add 3121
+python swe_waste.py ../swe/swe_log.jsonl.gz swe_waste.json --prompt-add 3121
+python figures.py analysis_v3.json ../preprint/figs
+python make_tex.py analysis_v3.json real_v3.json swe_v3.json ../preprint/tables
 ```
 
-Re-running `pilot.py` needs an OpenAI key and the HotpotQA distractor dev set
-(`hotpot_dev_distractor_v1.json`); the logged runs cost $1.85.
+All seeds are fixed. The simulation pools (`pool/*.npz`, about 70 MB) and the
+sampled raw trajectories (`swe/raw/sample_3000_seed0.parquet`, 103 MB) are not
+committed; `sim_v2.py` and `swe/scripts/fetch.py` rebuild them exactly.
+Re-running `pilot.py` needs an OpenAI key and the HotpotQA distractor dev set.
