@@ -2,7 +2,7 @@
 
 All notable changes to baar-core are documented here.
 
-## [Unreleased]
+## [0.12.0] — 2026-11-06
 
 ### Added
 - **Certified early stopping** (`baar.early_stop`). An `EarlyStopPolicy` scores, at fixed
