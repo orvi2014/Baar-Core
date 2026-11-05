@@ -607,7 +607,7 @@ Over seeds 1–30: post-hoc alerts overshoot in 30/30 runs and the default `esti
 
 ### Certified early stopping
 
-Long agent runs that will blow their budget are otherwise refused only once the money is gone. An `EarlyStopPolicy` checks the run at fixed checkpoints and stops it before the next call when it is predicted to exceed the budget, with a certificate: at most ε of runs that would have finished within budget are stopped (confidence 1 − δ). Fit on one set of logged runs, certify on another:
+Long agent runs that will blow their budget are otherwise refused only once the money is gone. An `EarlyStopPolicy` checks the run at fixed checkpoints and stops it before the next call when it is predicted to exceed the budget, with a certificate: at most ε of all runs are stopped although they would have finished within budget (confidence 1 − δ). As a share of the runs that would have finished, the rate is higher by the inverse of how common they are. Fit on one set of logged runs, certify on another:
 
 ```python
 from baar import BAARRouter, fit_early_stop, calibrate_early_stop, RunStopped
@@ -618,7 +618,7 @@ router = BAARRouter(budget=5.0, early_stop=policy)
 router.record_event("tool_error")   # report behaviour as the run goes; RunStopped ends the run early
 ```
 
-On 3,000 real coding-agent runs, at ε = 0.05 this saved 8–23% of all spend when the protected runs are those that would solve their task (`harm="resolve"`), and 4.5–16% when protecting every run that would finish (`harm="finish"`, the default), depending on how tight the budget is. Fit the model on runs disjoint from the calibration runs and fix the budget before calibrating; the guarantee assumes future runs look like the calibration runs. See [research/](research/).
+On 3,000 real coding-agent runs, at ε = 0.05 this saved 11–23% of all spend when the protected runs are those that would solve their task (`harm="resolve"`), and 4.5–16% when protecting every run that would finish (`harm="finish"`, the default), depending on how tight the budget is. Fit the model on runs disjoint from the calibration runs and fix the budget before calibrating; the guarantee assumes future runs look like the calibration runs. See [research/](research/).
 
 ## Budget awareness and wind-down
 

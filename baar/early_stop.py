@@ -14,7 +14,9 @@ satisfies
 
     P( P(harm) <= eps ) >= 1 - delta
 
-for i.i.d. runs from the deployment distribution. Stopping never changes the
+for i.i.d. runs from the deployment distribution. P(harm) is a share of *all*
+runs; as a share of the runs that would have finished (or solved), the rate is
+higher by the inverse of their frequency. Stopping never changes the
 steps before it, so one batch of logged runs can be replayed under every
 candidate threshold. The fallback, never stopping, has zero harm.
 
@@ -33,7 +35,8 @@ from baar.calibration import CalibrationResult, calibrate_from_failures
 from baar.core.exceptions import BudgetExhausted
 
 DEFAULT_CHECKPOINTS = (0, 5, 10, 15, 20, 30, 40, 50, 60, 80)
-DEFAULT_TAUS = (0.999, 0.995, 0.99, 0.98, 0.97, 0.95, 0.93, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6, 0.5)
+DEFAULT_TAUS = (0.999, 0.995, 0.99, 0.98, 0.97, 0.95, 0.93, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6, 0.5,
+                0.4, 0.3, 0.2, 0.1)
 MIN_ALIVE = 50
 
 
@@ -257,7 +260,8 @@ def calibrate_early_stop(policy: EarlyStopPolicy, runs: Iterable[Mapping], eps: 
     conservative (never stop) toward the most aggressive.
 
     Guarantee: if calibration runs are i.i.d. draws from deployment, the returned
-    threshold satisfies P(harm rate > eps) <= delta. The fallback, never stopping
+    threshold satisfies P(harm rate > eps) <= delta, where the harm rate is the
+    share of all runs (not only the good ones) that are harmed. The fallback, never stopping
     (``threshold=None``), has zero harm. Requirements: fit the model on runs
     disjoint from these calibration runs, and fix the budget before calibrating.
     """
