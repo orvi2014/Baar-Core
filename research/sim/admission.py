@@ -27,7 +27,7 @@ import real_v2 as R
 from baar.calibration import binom_cdf, calibrate_from_failures
 
 CHECKPOINTS = [0, 5, 10, 15, 20, 30, 40, 50, 60, 80]
-TAUS = [0.999, 0.995, 0.99, 0.98, 0.97, 0.95, 0.93, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6, 0.5]
+TAUS = [0.999, 0.995, 0.99, 0.98, 0.97, 0.95, 0.93, 0.9, 0.85, 0.8, 0.75, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
 EPSILONS = [0.01, 0.02, 0.05]
 DELTA = 0.05
 SPLITS = 200
@@ -162,6 +162,9 @@ def main():
                 doomed = over[ids]
                 return dict(false_kill=float(np.mean(stopped & fits[ids])),
                             lost_resolve=float(np.mean(stopped & fits_res[ids])),
+                            # the same harms as a share of the runs that would finish / solve within B
+                            false_kill_cond=float((stopped & fits[ids]).sum() / max(fits[ids].sum(), 1)),
+                            lost_resolve_cond=float((stopped & fits_res[ids]).sum() / max(fits_res[ids].sum(), 1)),
                             saved=float(1 - spend.sum() / base),
                             doomed_stopped=float(stopped[doomed].mean()) if doomed.any() else 0.0,
                             finished=float(np.mean(~stopped & fits[ids])),

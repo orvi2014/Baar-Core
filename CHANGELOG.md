@@ -2,6 +2,18 @@
 
 All notable changes to baar-core are documented here.
 
+## [Unreleased]
+
+### Changed
+- `calibrate_early_stop` tests thresholds down to 0.1 (was 0.5). At loose budgets
+  the certified threshold often reached 0.5, so the grid, not the guarantee, limited
+  how much could be saved.
+
+### Fixed
+- Docs: the early-stopping guarantee bounds the share of *all* runs that are stopped
+  although they would have finished (or solved); README and docstrings said "of the
+  runs that would have finished", which overstates it.
+
 ## [0.12.0] — 2026-11-06
 
 ### Added
