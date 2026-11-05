@@ -54,7 +54,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Union
 
 try:
     from fastapi import FastAPI, HTTPException, Request
@@ -75,8 +75,22 @@ from baar.core.caps import OutputLimitUnavailable
 # ── Request / response models ─────────────────────────────────────────────────
 
 class ChatMessage(BaseModel):
+    # Unknown OpenAI message fields are kept and forwarded to the provider.
+    model_config = {"extra": "allow"}
+
     role: str
-    content: str
+    # None for assistant messages that only carry tool_calls; a list for
+    # multi-part (text/image) content.
+    content: Optional[Union[str, List[Any]]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+    name: Optional[str] = None
+
+    def to_provider(self) -> Dict[str, Any]:
+        d = self.model_dump(exclude_none=True)
+        if "content" not in d and not self.tool_calls:
+            d["content"] = ""
+        return d
 
 
 class ChatRequest(BaseModel):
@@ -92,6 +106,24 @@ class ChatRequest(BaseModel):
     presence_penalty: Optional[float] = None
     stop: Optional[Any] = None
     user: Optional[str] = None
+    # Tool calling. Legacy `functions` / `function_call` are mapped onto these.
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Any] = None
+    functions: Optional[List[Dict[str, Any]]] = None
+    function_call: Optional[Any] = None
+
+    def provider_tools(self):
+        """(tools, tool_choice) to forward, or (None, None) when the request has none."""
+        tools = self.tools
+        tool_choice = self.tool_choice
+        if not tools and self.functions:
+            tools = [{"type": "function", "function": f} for f in self.functions]
+            fc = self.function_call
+            if isinstance(fc, dict) and fc.get("name"):
+                tool_choice = {"type": "function", "function": {"name": fc["name"]}}
+            elif fc in ("auto", "none"):
+                tool_choice = fc
+        return (tools or None), (tool_choice if tools else None)
 
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────
@@ -251,10 +283,38 @@ def create_app(
     @app.post("/v1/chat/completions")
     async def chat_completions(req: ChatRequest):
         task = _last_user_content(req.messages)
-        messages = [{"role": m.role, "content": m.content} for m in req.messages]
+        messages = [m.to_provider() for m in req.messages]
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
         max_tokens = _output_limit(req)
+        tools, tool_choice = req.provider_tools()
+
+        if tools:
+            # Tool-calling requests go through acomplete(), which forwards the
+            # schemas, counts them in the pre-flight estimate, and returns the
+            # model's tool_calls.
+            if req.stream:
+                return StreamingResponse(
+                    _stream_tool_response(router, task, messages, tools, tool_choice,
+                                          completion_id, created, max_tokens),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+            try:
+                response = await router.acomplete(
+                    task, messages=messages, tools=tools, tool_choice=tool_choice,
+                    **_output_kwargs(max_tokens),
+                )
+            except BudgetExhausted as exc:
+                raise _budget_error(exc)
+            except (BudgetExceeded,) as exc:
+                raise _budget_error(BudgetExhausted(str(exc), remaining=router.remaining))
+            except TaskRejected as exc:
+                raise _reject_error(exc)
+            except OutputLimitUnavailable as exc:
+                raise HTTPException(status_code=400, detail=_invalid_request_error(exc))
+            _, _, model_used = _last_step_info(router)
+            return _completion_from_response(completion_id, created, model_used, response)
 
         if req.stream:
             return StreamingResponse(
@@ -359,13 +419,129 @@ async def _stream_response(
         yield "data: [DONE]\n\n"
 
 
+async def _stream_tool_response(
+    router: BAARRouter,
+    task: str,
+    messages: List[Dict[str, Any]],
+    tools: List[Dict[str, Any]],
+    tool_choice: Any,
+    completion_id: str,
+    created: int,
+    max_tokens: Optional[int] = None,
+) -> AsyncIterator[str]:
+    """
+    Streaming for tool-calling requests. The call runs to completion under the
+    same guardrails, then is replayed as OpenAI chunks: content, then each tool
+    call as a single delta, then the real finish_reason. Clients that accumulate
+    deltas (the OpenAI SDKs, Vercel AI SDK, agent frameworks) see a normal stream.
+    """
+    try:
+        response = await router.acomplete(
+            task, messages=messages, tools=tools, tool_choice=tool_choice,
+            **_output_kwargs(max_tokens),
+        )
+        _, _, model_used = _last_step_info(router)
+        choice = response.choices[0]
+        msg = choice.message
+        yield _delta_chunk(completion_id, created, model_used, {"role": "assistant"})
+        if getattr(msg, "content", None):
+            yield _delta_chunk(completion_id, created, model_used, {"content": msg.content})
+        calls = [_tool_call_dict(tc) for tc in (getattr(msg, "tool_calls", None) or [])]
+        if calls:
+            yield _delta_chunk(completion_id, created, model_used,
+                               {"tool_calls": [dict(c, index=i) for i, c in enumerate(calls)]})
+        yield _delta_chunk(completion_id, created, model_used, {},
+                           finish_reason=choice.finish_reason or ("tool_calls" if calls else "stop"))
+        yield "data: [DONE]\n\n"
+    except (BudgetExhausted, BudgetExceeded) as exc:
+        remaining = getattr(exc, "remaining", router.remaining)
+        yield "data: " + json.dumps({"error": {
+            "message": str(exc), "type": "budget_exhausted",
+            "code": "quota_exceeded", "remaining_usd": remaining}}) + "\n\n"
+        yield "data: [DONE]\n\n"
+    except TaskRejected as exc:
+        yield "data: " + json.dumps({"error": {
+            "message": str(exc), "type": "task_rejected", "code": "value_gate_reject"}}) + "\n\n"
+        yield "data: [DONE]\n\n"
+    except OutputLimitUnavailable as exc:
+        yield f"data: {json.dumps(_invalid_request_error(exc))}\n\n"
+        yield "data: [DONE]\n\n"
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _delta_chunk(completion_id: str, created: int, model: str, delta: Dict[str, Any],
+                 finish_reason: Optional[str] = None) -> str:
+    payload = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+    }
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _tool_call_dict(tc: Any) -> Dict[str, Any]:
+    """OpenAI wire format for a tool call (LiteLLM object or plain dict)."""
+    get = (lambda o, k: o.get(k)) if isinstance(tc, dict) else getattr
+    fn = get(tc, "function")
+    return {
+        "id": get(tc, "id"),
+        "type": get(tc, "type") or "function",
+        "function": {
+            "name": get(fn, "name") if fn is not None else None,
+            "arguments": (get(fn, "arguments") if fn is not None else None) or "",
+        },
+    }
+
+
+def _completion_from_response(completion_id: str, created: int, model: str, response: Any) -> dict:
+    choice = response.choices[0]
+    msg = choice.message
+    calls = [_tool_call_dict(tc) for tc in (getattr(msg, "tool_calls", None) or [])]
+    message: Dict[str, Any] = {"role": "assistant", "content": getattr(msg, "content", None)}
+    if calls:
+        message["tool_calls"] = calls
+    usage = getattr(response, "usage", None)
+    pt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    ct = int(getattr(usage, "completion_tokens", 0) or 0)
+    return {
+        "id": completion_id,
+        "object": "chat.completion",
+        "created": created,
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": message,
+            "finish_reason": choice.finish_reason or ("tool_calls" if calls else "stop"),
+        }],
+        "usage": {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct},
+    }
+
+
+def _content_text(content: Any) -> str:
+    """Plain text of a message's content (string, multi-part list, or None)."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for p in content:
+            if isinstance(p, dict) and p.get("type") == "text":
+                parts.append(str(p.get("text", "")))
+            elif isinstance(p, str):
+                parts.append(p)
+        return " ".join(parts)
+    return str(content)
+
 
 def _last_user_content(messages: List[ChatMessage]) -> str:
     for m in reversed(messages):
         if m.role == "user":
-            return m.content
-    return messages[-1].content if messages else ""
+            return _content_text(m.content)
+    return _content_text(messages[-1].content) if messages else ""
 
 
 def _last_finish_reason(router: BAARRouter) -> str:

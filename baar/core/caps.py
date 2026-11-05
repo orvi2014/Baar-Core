@@ -13,6 +13,11 @@ Modes (``on_output_overrun``):
                   blocked before any network request.
   - "truncate"  — opt-in. Derive ``max_tokens`` from the remaining budget, so
                   a long response is cut off instead of overshooting.
+  - "calibrated" — "preflight" that reserves the empirical (1 - beta) quantile
+                  of logged output lengths (see ``baar.calibration``), with
+                  beta chosen so that P(a run overspends) <= eps with
+                  confidence 1 - delta. Never cuts responses off; without a
+                  usable quantile it reserves the worst case like "preflight".
 """
 
 import math
@@ -23,7 +28,7 @@ import litellm
 
 from baar.core.budget import BudgetExceeded, BudgetTracker
 
-OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate", "continue")
+OUTPUT_OVERRUN_MODES = ("estimate", "preflight", "truncate", "continue", "calibrated")
 
 # Anthropic's minimum thinking budget; also used as the floor for every provider.
 MIN_THINKING_BUDGET = 1024
@@ -228,8 +233,9 @@ def plan_output(
     is added on top; on effort-level providers it becomes a reasoning effort and
     the plan is otherwise unchanged; other models ignore it.
 
-    ``predicted_tokens`` (a learned output length, see baar.core.lengths) lowers
-    what "preflight" reserves; ``max_tokens`` stays the full limit, so nothing
+    ``predicted_tokens`` (a learned output length, see baar.core.lengths, or the
+    calibrated quantile for "calibrated", see baar.calibration) lowers what
+    "preflight" / "calibrated" reserve; ``max_tokens`` stays the full limit, so nothing
     is cut off. Other modes ignore it.
 
     Raises:
@@ -241,6 +247,10 @@ def plan_output(
     validate_mode(mode)
     if mode == "continue":
         mode = "truncate"  # each segment of a "continue" answer is a truncate call
+    if mode == "calibrated":
+        # "preflight" that reserves the run-level calibrated quantile passed in as
+        # predicted_tokens (see baar.calibration); worst case when it is None.
+        mode = "preflight"
     plan = _plan(
         mode, model=model, prompt_tokens=prompt_tokens, expected_output_tokens=expected_output_tokens,
         remaining=remaining, tracker=tracker, max_output_tokens=max_output_tokens,

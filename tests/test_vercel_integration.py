@@ -223,3 +223,153 @@ class TestHelpers:
     def test_last_user_content_falls_back_to_last_message(self):
         messages = [ChatMessage(role="assistant", content="Hi")]
         assert _last_user_content(messages) == "Hi"
+
+
+# ── Tool calling through the proxy ────────────────────────────────────────────
+
+import litellm as _litellm
+
+_TOOLS = [{
+    "type": "function",
+    "function": {
+        "name": "lookup",
+        "description": "Return the paragraph for an article title.",
+        "parameters": {"type": "object", "properties": {"title": {"type": "string"}},
+                       "required": ["title"]},
+    },
+}]
+
+
+def _tool_call_response():
+    return _litellm.ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "call_1", "type": "function",
+                    "function": {"name": "lookup", "arguments": "{\"title\": \"Paris\"}"},
+                }],
+            },
+        }],
+        usage={"prompt_tokens": 80, "completion_tokens": 12, "total_tokens": 92},
+    )
+
+
+def _tool_payload(**extra):
+    return {
+        "model": "baar",
+        "messages": [
+            {"role": "user", "content": "Where is the Louvre?"},
+            {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "call_0", "type": "function",
+                "function": {"name": "lookup", "arguments": "{\"title\": \"Louvre\"}"}}]},
+            {"role": "tool", "tool_call_id": "call_0", "content": "The Louvre is in Paris."},
+        ],
+        "tools": _TOOLS,
+        "tool_choice": "auto",
+        **extra,
+    }
+
+
+@patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002))
+class TestToolCalling:
+    def test_tools_forwarded_and_tool_calls_returned(self, _cpt):
+        router = make_router()
+        mock = AsyncMock(return_value=_tool_call_response())
+        with patch("baar.router.litellm.acompletion", new=mock):
+            resp = make_client(router).post("/v1/chat/completions", json=_tool_payload())
+        assert resp.status_code == 200, resp.text
+        sent = mock.call_args.kwargs
+        assert sent["tools"] == _TOOLS
+        assert sent["tool_choice"] == "auto"
+        # null-content assistant message and tool result reach the provider intact
+        assert sent["messages"][-2]["tool_calls"][0]["id"] == "call_0"
+        assert sent["messages"][-1] == {"role": "tool", "tool_call_id": "call_0",
+                                        "content": "The Louvre is in Paris."}
+        body = resp.json()
+        choice = body["choices"][0]
+        assert choice["finish_reason"] == "tool_calls"
+        assert choice["message"]["tool_calls"][0]["function"] == {
+            "name": "lookup", "arguments": "{\"title\": \"Paris\"}"}
+        assert body["usage"]["prompt_tokens"] == 80
+
+    def test_tool_schema_counted_in_preflight(self, _cpt):
+        router = make_router()
+        seen = []
+        import baar.router as br
+        real = br.token_counter
+
+        def spy(*a, **kw):
+            seen.append(kw.get("tools"))
+            return real(*a, **kw)
+
+        with patch("baar.router.litellm.acompletion", new=AsyncMock(return_value=_tool_call_response())), \
+             patch("baar.router.token_counter", side_effect=spy):
+            make_client(router).post("/v1/chat/completions", json=_tool_payload())
+        assert _TOOLS in seen
+
+    def test_streaming_tool_calls(self, _cpt):
+        router = make_router()
+        with patch("baar.router.litellm.acompletion", new=AsyncMock(return_value=_tool_call_response())):
+            resp = make_client(router).post("/v1/chat/completions", json=_tool_payload(stream=True))
+        assert resp.status_code == 200
+        events = [l[6:] for l in resp.text.splitlines() if l.startswith("data: ")]
+        assert events[-1] == "[DONE]"
+        chunks = [json.loads(e) for e in events[:-1]]
+        deltas = [c["choices"][0]["delta"] for c in chunks]
+        calls = [d["tool_calls"] for d in deltas if "tool_calls" in d]
+        assert calls and calls[0][0]["index"] == 0
+        assert calls[0][0]["function"]["name"] == "lookup"
+        assert chunks[-1]["choices"][0]["finish_reason"] == "tool_calls"
+
+    def test_legacy_functions_mapped_to_tools(self, _cpt):
+        router = make_router()
+        mock = AsyncMock(return_value=_tool_call_response())
+        payload = {"model": "baar",
+                   "messages": [{"role": "user", "content": "Where is the Louvre?"}],
+                   "functions": [_TOOLS[0]["function"]],
+                   "function_call": {"name": "lookup"}}
+        with patch("baar.router.litellm.acompletion", new=mock):
+            resp = make_client(router).post("/v1/chat/completions", json=payload)
+        assert resp.status_code == 200
+        assert mock.call_args.kwargs["tools"] == _TOOLS
+        assert mock.call_args.kwargs["tool_choice"] == {"type": "function",
+                                                        "function": {"name": "lookup"}}
+
+    def test_budget_exhausted_with_tools_returns_402(self, _cpt):
+        router = make_router()
+        with patch.object(router, "acomplete", side_effect=BudgetExhausted("broke", remaining=0.0)):
+            resp = make_client(router).post("/v1/chat/completions", json=_tool_payload())
+        assert resp.status_code == 402
+
+    def test_null_content_message_accepted_without_tools(self, _cpt):
+        router = make_router()
+        with patch.object(router, "achat", new=AsyncMock(return_value="ok")):
+            payload = _tool_payload()
+            del payload["tools"], payload["tool_choice"]
+            resp = make_client(router).post("/v1/chat/completions", json=payload)
+        assert resp.status_code == 200
+
+    def test_multipart_content_accepted(self, _cpt):
+        router = make_router()
+        with patch.object(router, "achat", new=AsyncMock(return_value="ok")) as m:
+            resp = make_client(router).post("/v1/chat/completions", json={
+                "model": "baar",
+                "messages": [{"role": "user", "content": [{"type": "text", "text": "hi there"}]}]})
+        assert resp.status_code == 200
+        assert m.call_args.args[0] == "hi there"
+
+
+def test_router_complete_returns_tool_calls_sync():
+    router = make_router()
+    with patch("baar.core.budget.cost_per_token", return_value=(0.000001, 0.000002)), \
+         patch("baar.router.litellm.completion", return_value=_tool_call_response()) as mock:
+        resp = router.complete("Where is the Louvre?", tools=_TOOLS)
+        text = router.chat("Where is the Louvre?", tools=_TOOLS)
+    assert resp.choices[0].message.tool_calls[0].function.name == "lookup"
+    assert text == ""
+    assert mock.call_args.kwargs["tools"] == _TOOLS
