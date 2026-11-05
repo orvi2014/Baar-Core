@@ -509,7 +509,9 @@ The mode never sets \texttt{max\_tokens}, and it falls back to preflight when
 no level is certified or a stratum has too few samples. One gap remains: the
 router does not yet know whether a step is a tool call or a final answer, so
 it pools both step types per model; per-type strata are available through the
-lower-level \texttt{plan\_output} call. \todo{link release version.}
+lower-level \texttt{plan\_output} call. The code is available at commit
+\texttt{c989f34b4498} of the repository below and will ship in the next
+Baar-Core release.
 
 % ---------------------------------------------------------------------------
 \section{Limitations}
@@ -546,7 +548,8 @@ recovers most of the capability that worst-case reservation gives up.
 
 \paragraph{Reproducibility.} Simulator, calibration code, the real-model
 harness and all raw results are in the \texttt{research/} directory of
-\url{https://github.com/orvi2014/Baar-Core} \todo{pin commit hash at submission}.
+\url{https://github.com/orvi2014/Baar-Core}, at commit
+\href{https://github.com/orvi2014/Baar-Core/tree/c989f34b44983407b5a4d4f9f1d2108eb4d54e7d}{\texttt{c989f34b4498}}.
 
 \paragraph{AI usage.} Generative AI tools (Claude Opus and Claude Sonnet,
 Anthropic, through Claude Code) were used to write simulation and analysis
