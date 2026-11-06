@@ -28,8 +28,12 @@ If you discover a security vulnerability, please send an e-mail to **das.orvi@ya
 2. Install dev dependencies: `pip install -e ".[dev]"`
 3. Run tests: `pytest`
 
+## 💬 Questions and support
+- For usage questions, open a [GitHub issue](https://github.com/orvi2014/Baar-Core/issues/new) with the label `question`.
+- Please search existing issues first; include your Baar-Core version and a minimal example.
+
 ## 📜 Code of Conduct
-By participating in this project, you agree to abide by our code of conduct. We are committed to providing a welcoming and inspiring community for all.
+By participating in this project, you agree to abide by our [code of conduct](CODE_OF_CONDUCT.md). We are committed to providing a welcoming and inspiring community for all.
 
 ---
 Built with ❤️ by orvi2014

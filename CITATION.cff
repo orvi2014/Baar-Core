@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use Baar-Core, please cite it as below."
+title: "Baar-Core: Pre-flight budget enforcement and budget-aware model routing for LLM agents"
+type: software
+authors:
+  - family-names: Das
+    given-names: Robat
+    orcid: "https://orcid.org/0009-0006-7792-8351"
+    affiliation: "Independent Researcher"
+version: 0.12.1
+date-released: 2026-11-06
+license: MIT
+repository-code: "https://github.com/orvi2014/Baar-Core"
+keywords:
+  - large language models
+  - LLM agents
+  - cost control
+  - budget enforcement
+  - risk control
