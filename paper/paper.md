@@ -148,6 +148,11 @@ output-planning modes and the certified run-level methods. The author
 reviewed, modified and tested all AI-generated code and text. Correctness is
 checked by the automated test suite run in continuous integration.
 
+# Competing interests
+
+The author also develops noburn.dev, a commercial service built on Baar-Core.
+Baar-Core itself is and remains open source under the MIT license.
+
 # Acknowledgements
 
 This work received no external funding.
