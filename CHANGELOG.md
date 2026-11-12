@@ -2,6 +2,29 @@
 
 All notable changes to baar-core are documented here.
 
+## [0.13.0] — 2026-11-13
+
+### Added
+- **Run logs** (`baar.runlog`). `BAARRouter(run_log_path="runs.jsonl")` writes one line per call
+  (pre-call prompt estimate, billed tokens and cost, per-token prices, worst-case output,
+  `record_event` counters) and `router.finish_run(finished=..., resolved=...)` or
+  `with router.recording_run() as run:` writes the run's outcome. Runs ended by the budget or by
+  an early-stop policy are marked and left out of calibration. `load_runs(path)` reads them back.
+- **`baar-calibrate`** command and `baar.certify`: `certify_calibrated(runs, budget, eps)` and
+  `certify_early_stop(runs, budget, eps, harm=...)` split the logged runs, replay them exactly and
+  return a `Certificate` (`save`/`load`, `router_kwargs()` for `BAARRouter`). Too few runs raise
+  `NotEnoughRuns` with the number still needed. The certificate reports when the worst-case
+  fallback itself overspent on calibration runs (prompt estimates below the billed prompt).
+- **`GuaranteeMonitor`** (`baar.monitor`): an anytime-valid sequential test of "at most ε of runs
+  overspend" on live runs; `BAARRouter(guarantee_monitor=...)` updates it in `finish_run`, and it
+  warns (`GuaranteeAlarm`) or calls `on_alarm` when the guarantee no longer holds.
+
+### Notes
+- The certification replay counts a run as overspending whenever its admitted calls cost more
+  than the budget, including runs where a later call was then refused. The research scripts
+  behind the preprint (`research/sim/real_v2.py`, `sim_thm1.py`) counted only runs that were
+  never refused, which slightly undercounts overspending.
+
 ## [0.12.1] — 2026-11-06
 
 ### Changed

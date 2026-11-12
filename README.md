@@ -605,6 +605,44 @@ Over seeds 1–30: post-hoc alerts overshoot in 30/30 runs and the default `esti
 
 
 
+### From logs to a certificate in one command
+
+The fastest way to use either certified feature: let the router log whole runs, then run `baar-calibrate`.
+
+**1. Log runs** with a budget that does not bind (so every run shows what it would have cost), one router per run:
+
+```python
+from baar import BAARRouter
+
+router = BAARRouter(budget=100.0, run_log_path="runs.jsonl")
+with router.recording_run() as run:
+    ...                                  # your agent loop: router.chat(...), router.record_event("tool_error")
+    run.finished = True                  # the agent gave a final answer
+    run.resolved = tests_pass            # optional: was it correct?
+```
+
+**2. Certify** a budget and a risk level. It needs at least ⌈ln δ / ln(1 − ε)⌉ calibration runs (59 at ε = δ = 0.05) and tells you how many more to log if you have too few:
+
+```bash
+baar-calibrate runs.jsonl --budget 0.50 --eps 0.05                    # calibrated reservation level
+baar-calibrate runs.jsonl --budget 0.50 --eps 0.05 --early-stop \
+               --harm resolve --counter tool_error -o early_stop.json  # certified early stopping
+```
+
+**3. Use it**, and watch that it keeps holding:
+
+```python
+from baar import BAARRouter, Certificate, GuaranteeMonitor
+
+cert = Certificate.load("baar_cert.json")
+monitor = GuaranteeMonitor.for_certificate(cert)       # share one monitor across runs
+router = BAARRouter(budget=0.50, guarantee_monitor=monitor, **cert.router_kwargs())
+...
+router.finish_run(finished=True)                       # or use router.recording_run()
+```
+
+The monitor raises a `GuaranteeAlarm` warning (or calls `on_alarm`) when live runs show that more than ε of them overspend, which happens when the agent, its prompts or its tasks have changed since calibration. Its test is anytime-valid: checking after every run keeps the false-alarm probability below `alpha`. The same steps are available in Python as `load_runs`, `certify_calibrated` and `certify_early_stop`.
+
 ### Certified early stopping
 
 Long agent runs that will blow their budget are otherwise refused only once the money is gone. An `EarlyStopPolicy` checks the run at fixed checkpoints and stops it before the next call when it is predicted to exceed the budget, with a certificate: at most ε of all runs are stopped although they would have finished within budget (confidence 1 − δ). As a share of the runs that would have finished, the rate is higher by the inverse of how common they are. Fit on one set of logged runs, certify on another:
