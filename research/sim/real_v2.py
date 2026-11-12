@@ -107,7 +107,9 @@ class Replayer:
         first = np.argmax(over, axis=1)
         spent = np.where(refused, self.spent_before[idx, first], self.total[idx])
         admitted = ~refused
-        return np.stack([admitted & (self.total[idx] > budget + 1e-12),
+        # overspent: what the run was admitted to spend exceeds B (a refused run can have
+        # crossed B before the refusal, when an admitted call cost more than reserved)
+        return np.stack([spent > budget + 1e-12,
                          admitted * self.finished[idx], admitted * self.quality[idx], spent], axis=1).astype(float)
 
 

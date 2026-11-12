@@ -21,9 +21,9 @@ for ax, scen in zip(axes, ["valid", "shift"]):
         xs = [float(b) for b in c["risk_curve"]]
         ys = [100 * v for v in c["risk_curve"].values()]
         ax.plot(xs, ys, marker="o", ms=2.5, lw=1.2, label=f"B = ${c['budget']:.2f}")
-    ax.plot([1e-3, 0.12], [0.1, 12], ls=":", c="grey", lw=0.8, label="run risk = per-call level")
+    ax.plot([1e-3, 0.4], [0.1, 40], ls=":", c="grey", lw=0.8, label="run risk = per-call level")
     ax.set_xscale("log")
-    ax.set_ylim(0, 12)
+    ax.set_ylim(0, 40)
     ax.set_xlabel(r"per-call exceedance level $\beta$")
     ax.set_title("tables match deployment" if scen == "valid" else "tables fitted on easier tasks")
 axes[0].set_ylabel("run overrun probability (%)")
