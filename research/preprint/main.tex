@@ -40,7 +40,7 @@ consistent with $\delta = 5\%$. On 2{,}100 real gpt-4o-mini and gpt-4o runs
 replayed under the shipped controller, no setting showed a significant
 violation; gains over certified expected-cost reservation are small at
 $\varepsilon = 0.05$ and large at tight tolerances. On 3{,}000 long-horizon
-coding-agent trajectories no policy overspends, but runs that cannot finish
+coding-agent trajectories overspending is negligible, but runs that cannot finish
 within budget absorb up to 61\% of spend. For such agents we certify a second
 decision, stopping a run early: with at most 5\% of all runs stopped although
 they would have solved their task, the certified rule saved 11--23\% of spend,
@@ -185,7 +185,9 @@ reservation at level $\beta$; what differs is how $\beta$ is chosen.
 
 \paragraph{Modes and risk.}
 In \textbf{Mode A} responses are never cut off and the run loss is
-$L = \mathbf 1\{\sum_t c_t > B\}$. In \textbf{Mode B} each call carries a
+$L = \mathbf 1\{\sum_t c_t > B\}$, summed over the calls that were made, so a run
+that is refused after an admitted call has already crossed $B$ counts as an
+overrun. In \textbf{Mode B} each call carries a
 \texttt{max\_tokens} equal to the largest affordable output, so overrun is
 impossible and $L = \mathbf 1\{\text{some response was cut off}\}$. Mode A is
 the default in Baar-Core, because a silently truncated answer can corrupt
@@ -279,7 +281,7 @@ probability that one response exceeds its reservation by $\beta$. The run-level
 risk of the same policy can be far lower or higher. It is lower when most runs
 end with budget to spare, so an exceeding response rarely matters: in our
 simulator, per-call level $\beta = 0.3$ gives run risk between
-0.1\% and 5.0\% depending only on the budget and the tables (Figure~\ref{fig:risk}). It is higher
+0.2\% and 18.6\% depending only on the budget and the tables (Figure~\ref{fig:risk}). It is higher
 when budgets are tight and runs are long: if each of $T$ calls has independent
 exceedance probability $\beta$ and any exceedance overruns, the run risk is
 $1-(1-\beta)^T$. The mapping from $\beta$ to run risk depends on the workload
@@ -432,33 +434,39 @@ $\varepsilon = 0.05$. Preflight and the per-step baseline use the capable model
 for no step while $\kappa \ge 4$; per-step control reaches 14\% at
 $\kappa = 1.6$ and 44\% at $\kappa = 0.8$, against 53\% and 65\% for run-level
 calibration. Uncertified estimate mode buys about as much capability, but its
-risk is whatever the workload makes it: under the shifted tables it overruns
-5.4\% of runs at $B = \$0.02$, above the tolerance. The certified estimate is
-competitive only when estimate mode is far below $\varepsilon$; near the
-tolerance its single test fails and it falls back to preflight (6.3\% and
-0.5\% capable-model steps at $B = \$0.02$), whereas the run-level policy keeps
-43\% and 42\%. At $\varepsilon = 0.05$ and $n = 1{,}000$ the certified policy is
-within 3.6 points of the oracle in Mode A and 6.0 in Mode B. At smaller
-tolerances the gap grows where budgets are tightest: the median gap is 0.7 and
-3.6 points at $\varepsilon = 0.01$ and $0.02$, but it reaches 15--16 points at
-$B = \$0.01$, where 1{,}000 runs give little power to certify the levels whose
-risk lies just below $\varepsilon$. In Mode B at $B = \$0.02$, estimate mode
+risk is whatever the workload makes it: at the two tightest budgets it overruns
+13.5--15.3\% of runs with matched tables and 17.0--19.2\% with shifted ones,
+about three times the tolerance or more. The certified estimate is competitive
+only when estimate mode is far below $\varepsilon$; otherwise its single test
+fails and it falls back to preflight (no capable-model steps at $B = \$0.02$,
+and 8.3\% in the shifted scenario at $B = \$0.05$), whereas the run-level
+policy keeps 25\% and 11\% at $B = \$0.02$ and 52\% in the shifted scenario at
+$B = \$0.05$. At
+$B = \$0.01$ ($\kappa = 8.2$) no member of the family that uses the capable
+model has risk at most 5\%, so the run-level policy, like the oracle, uses only
+the small model: at this budget safety costs capability. At
+$\varepsilon = 0.05$ and $n = 1{,}000$ the certified policy is within 5.8 points
+of the oracle in Mode A and 6.0 in Mode B. At other tolerances the median gap
+over all settings is below one point, but it reaches 14--21 points in a few
+settings (for example 21 points in the shifted scenario at $B = \$0.05$ and
+$\varepsilon = 0.01$), where 1{,}000 runs give little power to certify the
+levels whose risk lies just below $\varepsilon$. In Mode B at $B = \$0.02$, estimate mode
 truncates 13.5\% of runs (matched) and 17.1\% (shifted); at
 $\varepsilon = 0.05$ the certified policy truncates 3.4\% and 2.3\% on average.
 
 Table~\ref{tab:validity} summarises validity. Pooled over the 40 settings, the
-selected policy's true risk exceeded $\varepsilon$ in 0.4--0.8\% of
-calibrations at each calibration size. The worst setting reached 5.3\% (106 of
+selected policy's true risk exceeded $\varepsilon$ in 0.5--0.8\% of
+calibrations at each calibration size. The worst setting reached 5.3\% (107 of
 2{,}000; 95\% Clopper--Pearson interval 4.4--6.4\%), consistent with
-$\delta = 5\%$: in the shifted scenario at $B = \$0.01$ and $\varepsilon = 0.02$,
-the level $\beta = 0.2$ has true risk just above $\varepsilon$, which is where
-the bound of Theorem~\ref{thm:main} is tight, since the test at that level
-rejects with probability close to $\delta$. A second setting with a similar
-count (107 of 2{,}000) selected a level whose true risk is within two standard
-errors of $\varepsilon$, so its violations are ambiguous rather than clear. At
+$\delta = 5\%$: in the shifted scenario in Mode B at $\varepsilon = 0.10$ the
+procedure often selected a level whose true risk is within two standard errors
+of $\varepsilon$, which is where the bound of Theorem~\ref{thm:main} is tight,
+since the test at that level rejects with probability close to $\delta$; these
+violations are ambiguous rather than clear. The largest share of clear
+violations in any setting was 3.8\%. At
 $n = 100$, the settings with $\varepsilon \le 0.02$ can certify nothing, as
 Proposition~\ref{prop:nmin} predicts, and fall back to preflight; from
-$n = 300$ fallback is rare (0.3\%).
+$n = 300$ fallback is rare (1.1\%).
 
 % ---------------------------------------------------------------------------
 \section{Real short-horizon runs: HotpotQA}\label{sec:hotpot}
@@ -536,15 +544,15 @@ With the prompt margin, estimate mode is already fairly safe on this workload
 (at most 0.8\% overrun), so at $\varepsilon = 0.05$ the certified estimate
 passes its test and the run-level policy gains little: at the median and 75th
 percentile budgets it finished 47--71\% of runs against 38--67\%, 1.07--1.25
-times as many, and matched the oracle within 1.3 points. The advantage appears
+times as many, and matched the oracle within 1.5 points. The advantage appears
 at tight tolerances, where a single test of estimate mode fails. At
-$\varepsilon = 0.02$ the run-level policy finished 31--69\% of runs against
-8--54\%; at $\varepsilon = 0.01$ with gpt-4o-mini, 39--58\% against 3--4\%. With
+$\varepsilon = 0.02$ the run-level policy finished 30--68\% of runs against
+7--52\%; at $\varepsilon = 0.01$ with gpt-4o-mini, 39--57\% against 2--4\%. With
 gpt-4o, 225 calibration runs are fewer than the 299 that
 Proposition~\ref{prop:nmin} requires for $\varepsilon = 0.01$, so nothing was
 certified and the procedure fell back to preflight, as it should. The run-level
 policy is not always near the oracle: at $\varepsilon = 0.02$ and the median
-budget it finished 31\% of gpt-4o runs against the oracle's 46\%, because 225
+budget it finished 30\% of gpt-4o runs against the oracle's 46\%, because 225
 runs give little power to certify the more aggressive levels.
 
 % ---------------------------------------------------------------------------
@@ -582,9 +590,11 @@ budget & $B$ & $\kappa$ & preflight & estimate & run-level LTT & unconstrained d
 
 \paragraph{Results.}
 Here $\kappa$ is 0.013--0.037: one maximum-length output costs at most
-4\% of the budget, and input tokens are 97\% of cost. No policy overran a single
-held-out run at any budget, the certified policy behaved exactly like estimate
-mode, and preflight finished at most 2.9 points fewer runs
+4\% of the budget, and input tokens are 97\% of cost. Overspending was
+negligible: at most 0.005\% of held-out runs under any policy (fewer than one in
+20{,}000, all at the 50th and 75th percentile budgets) and none under preflight;
+the certified policy finished as many runs as estimate mode to within 0.05
+points, and preflight finished at most 2.9 points fewer runs
 (Table~\ref{tab:swe}). Output reservation is not where the budget bites on this
 workload. What does bite is runs stopped mid-task. Their number is set almost
 entirely by where the budget sits: at a budget equal to the $q$-th percentile of
@@ -764,6 +774,16 @@ to within $10^{-11}$. In deployment, the context-size feature comes from the
 router's own prompt estimate, so models should be fitted on logs produced the
 same way, and each router should serve one run.
 
+Release 0.13.0 closes the loop from logs to deployment. Given a path for a run
+log, the router records whole runs with the pre-call prompt estimate, the
+billed cost and per-token prices of every call; the command
+\texttt{baar-calibrate} certifies either decision from such a log, replaying
+runs exactly as in Section~\ref{sec:hotpot}; and \texttt{GuaranteeMonitor}
+watches a certified reservation level in deployment with an anytime-valid
+sequential test, warning when live runs overspend more often than
+$\varepsilon$, as they will if the workload has drifted from the calibration
+runs.
+
 % ---------------------------------------------------------------------------
 \section{Limitations}
 
@@ -787,9 +807,8 @@ same way, and each router should serve one run.
   a workload with long outputs, many calls and tight budgets would test the
   middle of the range.
   \item \textbf{Power at tight tolerances.} Validity holds at any $n$, but at
-  $\varepsilon \le 0.02$ and tight budgets 1{,}000 runs can leave the certified
-  policy 15 points of capable-model use below the best safe member of the
-  family.
+  $\varepsilon \le 0.02$ 1{,}000 runs can leave the certified policy up to 21
+  points of capable-model use below the best safe member of the family.
   \item \textbf{Mode B} assumes exact prompt counts; with an under-counting
   estimator the backstop \texttt{max\_tokens} can still let a call overrun.
   \item \textbf{Early stopping depends on its predictor.} The certificate
@@ -828,9 +847,9 @@ this saved 11--23\% of spend.
 the \texttt{research/} directory of \url{https://github.com/orvi2014/Baar-Core}
 at commit
 \begin{center}
-\small\href{https://github.com/orvi2014/Baar-Core/tree/5dc764699a99436c85dd110b3aadb1b5c1130807/research}{\texttt{5dc764699a99436c85dd110b3aadb1b5c1130807}}
+\small\href{https://github.com/orvi2014/Baar-Core/tree/d5ff5dbdf98a66f7c9a8e6bc6f64ed49d9995272/research}{\texttt{d5ff5dbdf98a66f7c9a8e6bc6f64ed49d9995272}}
 \end{center}
-and the library methods are in releases v0.11.0 and v0.12.1. Every table is generated from the
+and the library methods are in releases v0.11.0, v0.12.1 and v0.13.0. Every table is generated from the
 analysis outputs by \texttt{research/sim/make\_tex.py} and
 \texttt{make\_tex\_es.py}.
 
