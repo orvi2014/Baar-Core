@@ -28,6 +28,15 @@ Every table in the paper is generated from the analysis outputs by
 | `sim/analysis_v2.json`, `sim/real_v2.json`, `sim/swe_v2.json` | Earlier outputs superseded after the second review, kept for the record |
 | `sim/sim_ltt.py`, `sim_ltt_repeat_par.py`, `make_tables.py`, `ltt_repeat.jsonl`, `tables.jsonl`, `real_replay.py`, `real_results.json` | First-version analyses, kept for the record |
 
+## Corrections
+
+- 2026-11-13 (commit `d5ff5db`): the simulator and the real-trace replay counted a run as
+  overrunning only if it was never refused. A run can cross the budget through an admitted
+  call that costs more than reserved and then be refused; it has overspent, and the paper's
+  loss already counts it. All simulation and replay results were re-run. Validity is
+  unchanged (worst setting 5.3%); estimate mode and per-call levels are riskier at tight
+  budgets than first reported, and coding-agent overspending is at most 0.005% instead of 0.
+
 ## Reproduce
 
 Python 3.12 with numpy, scipy, matplotlib and `baar-core>=0.11.0`.

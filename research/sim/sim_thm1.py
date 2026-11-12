@@ -124,7 +124,8 @@ def run_once(rng, budget, policy, q, means, eps, scenario, mode):
         if admitted is not None and policy == "calibrated":
             wealth -= spend
         if admitted is None:
-            return False, truncated, False, spent, steps, big_steps  # refused, run incomplete
+            # refused, run incomplete; it has overspent if earlier calls cost more than reserved
+            return spent > budget + 1e-12, truncated, False, spent, steps, big_steps
         m, kind = admitted
         big_steps += m == "big"
         y = draw_y(rng, m, kind, difficulty)
