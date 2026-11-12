@@ -4,6 +4,7 @@ Handles the end-to-end flow: routing, budget constraints, and execution.
 """
 
 import asyncio
+import contextlib
 import dataclasses
 import importlib.metadata
 import json
@@ -22,6 +23,7 @@ from baar.core import caps
 from baar.core.lengths import OutputLengths
 from baar.calibration import resolve_beta
 from baar.early_stop import EarlyStopPolicy, RunState, RunStopped
+from baar.runlog import RunLogWriter, RunOutcome, new_run_id
 from baar.core.awareness import BudgetStatus, WindDown, add_note, DEFAULT_WRAP_UP
 from baar.core.cache import cached_tokens
 from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
@@ -333,6 +335,9 @@ class BAARConfig:
     output_quantiles: Optional[Any] = None  # baar.calibration.QuantileTable, for "calibrated"
     calibration_beta: Optional[Any] = None  # float or baar.calibration.CalibrationResult, for "calibrated"
     early_stop: Optional[Any] = None  # baar.early_stop.EarlyStopPolicy: certified early stopping of the run
+    run_log_path: Optional[str] = None  # write run-level logs for baar-calibrate (see baar.runlog)
+    run_id: Optional[str] = None  # id of this router's run in the run log (random if None)
+    guarantee_monitor: Optional[Any] = None  # baar.monitor.GuaranteeMonitor, updated by finish_run()
     segment_tokens: int = 2000  # "continue": output tokens per segment
     max_segments: int = 8  # "continue": most segments for one answer
     budget_awareness: Any = False  # True, or Callable[[BudgetStatus], str]: add a status line to each call
@@ -425,6 +430,9 @@ class BAARRouter:
         output_quantiles: Optional[Any] = None,
         calibration_beta: Optional[Any] = None,
         early_stop: Optional[EarlyStopPolicy] = None,
+        run_log_path: Optional[str] = None,
+        run_id: Optional[str] = None,
+        guarantee_monitor: Optional[Any] = None,
         segment_tokens: int = 2000,
         max_segments: int = 8,
         budget_awareness: Any = False,
@@ -474,6 +482,9 @@ class BAARRouter:
             output_quantiles=output_quantiles,
             calibration_beta=calibration_beta,
             early_stop=early_stop,
+            run_log_path=run_log_path,
+            run_id=run_id,
+            guarantee_monitor=guarantee_monitor,
             segment_tokens=segment_tokens,
             max_segments=max_segments,
             budget_awareness=budget_awareness,
@@ -618,6 +629,12 @@ class BAARRouter:
         self._small_fallback_models = list(config.small_fallback_models or [])
         self._big_fallback_models = list(config.big_fallback_models or [])
         self._telemetry_jsonl_path = config.telemetry_jsonl_path
+        self._run_log = RunLogWriter(config.run_log_path) if config.run_log_path else None
+        self._run_id = str(config.run_id) if config.run_id else new_run_id()
+        self._monitor = config.guarantee_monitor
+        self._run_finished = False
+        self._run_steps = 0
+        self._run_lock = threading.Lock()
         self._budget_async_lock = asyncio.Lock()
         self._step_counter_lock = threading.Lock()
         self._config: BAARConfig = config
@@ -961,7 +978,7 @@ class BAARRouter:
             cached_prompt_tokens=cached_tokens(response.usage),
         )
         self._log.add(step_result)
-        self._append_telemetry(step_result)
+        self._after_step(step_result, tc, limit)
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
         if final:
             self._final_answer = step_result.response_text
@@ -1234,7 +1251,7 @@ class BAARRouter:
                     cached_prompt_tokens=cached_for_record,
                 )
                 self._log.add(step_result)
-                self._append_telemetry(step_result)
+                self._after_step(step_result, tc, limit)
                 if completed:  # an early exit records the reservation, not a real length
                     self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
                 if step_sink is not None:
@@ -1525,7 +1542,7 @@ class BAARRouter:
             cached_prompt_tokens=cached_tokens(response.usage),
         )
         self._log.add(step_result)
-        self._append_telemetry(step_result)
+        self._after_step(step_result, tc, limit)
         self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
         if final:
             self._final_answer = step_result.response_text
@@ -1806,7 +1823,7 @@ class BAARRouter:
                     cached_prompt_tokens=cached_for_record,
                 )
                 self._log.add(step_result)
-                self._append_telemetry(step_result)
+                self._after_step(step_result, tc, limit)
                 if completed:  # an early exit records the reservation, not a real length
                     self._output_lengths.observe(step_result.model_used, step_result.completion_tokens)
                 if step_sink is not None:
@@ -2485,6 +2502,103 @@ class BAARRouter:
     def _execution_model_candidates(self, tier: ModelTier, chosen_model: str) -> List[str]:
         extras = self._big_fallback_models if tier == ModelTier.BIG else self._small_fallback_models
         return [chosen_model] + [m for m in extras if m and m != chosen_model]
+
+    # ── Run-level logging and monitoring ─────────────────────────────────────
+
+    @property
+    def run_id(self) -> str:
+        """Id of this router's run in the run log."""
+        return self._run_id
+
+    def _after_step(self, step: StepResult, tc: Callable[[str], int], limit: Optional[int]) -> None:
+        self._append_telemetry(step)
+        if self._run_log is not None:
+            self._log_run_step(step, tc, limit)
+
+    def _log_run_step(self, step: StepResult, tc: Callable[[str], int], limit: Optional[int]) -> None:
+        model = step.model_used
+        try:
+            est = int(tc(model))
+        except Exception:
+            est = int(step.prompt_tokens)
+        try:
+            worst = caps.output_limit(model, est, limit)
+        except Exception:
+            worst = None
+        with self._run_lock:
+            index = self._run_steps
+            self._run_steps += 1
+        record = {
+            "type": "step", "run": self._run_id, "step": index, "model": model,
+            "est_prompt_tokens": est, "prompt_tokens": int(step.prompt_tokens),
+            "completion_tokens": int(step.completion_tokens), "cost": float(step.cost),
+            "price_in": self._tracker.input_price_per_token(model, est),
+            "price_out": self._tracker.output_price_per_token(model, est),
+            "max_output_tokens": worst, "finish_reason": step.finish_reason,
+            "counters": self.events,
+        }
+        try:
+            self._run_log.write(record)
+        except OSError:
+            pass
+
+    def finish_run(self, finished: bool, resolved: Optional[bool] = None,
+                   stopped_by_budget: bool = False, **extra: Any) -> None:
+        """
+        End this router's run: write its outcome to the run log (``run_log_path``)
+        and update the ``guarantee_monitor``. Call it once per run; one router is
+        one run.
+
+        Args:
+            finished:          the agent completed its task (gave a final answer).
+            resolved:          the answer was correct, if you know (for harm="resolve").
+            stopped_by_budget: the budget or an early-stop policy ended the run;
+                               such runs are left out of calibration.
+            extra:             any JSON-serialisable fields to keep with the run.
+        """
+        with self._run_lock:
+            if self._run_finished:
+                raise RuntimeError(f"run {self._run_id} was already finished; use a new router per run")
+            self._run_finished = True
+        spent = float(self.spent)
+        if self._run_log is not None:
+            record = {"type": "run", "run": self._run_id, "finished": bool(finished),
+                      "resolved": None if resolved is None else bool(resolved),
+                      "stopped_by_budget": bool(stopped_by_budget), "cost": spent,
+                      "budget": float(self.budget), "steps": self._run_steps}
+            record.update(extra)
+            try:
+                self._run_log.write(record)
+            except OSError:
+                pass
+        if self._monitor is not None:
+            self._monitor.update(spent > float(self.budget) + 1e-12)
+
+    @contextlib.contextmanager
+    def recording_run(self):
+        """
+        Context manager that ends the run on exit::
+
+            with router.recording_run() as run:
+                ...  # the agent loop
+                run.finished = True
+                run.resolved = tests_pass
+
+        A ``BudgetExhausted`` (including ``RunStopped``) marks the run as stopped
+        by the budget and is re-raised; any other exception records an
+        unfinished run and is re-raised.
+        """
+        outcome = RunOutcome(run_id=self._run_id)
+        try:
+            yield outcome
+        except BudgetExhausted:
+            self.finish_run(False, outcome.resolved, stopped_by_budget=True, **outcome.extra)
+            raise
+        except BaseException:
+            self.finish_run(False, outcome.resolved, **outcome.extra)
+            raise
+        else:
+            self.finish_run(outcome.finished, outcome.resolved, **outcome.extra)
 
     def _append_telemetry(self, step: StepResult) -> None:
         if not self._telemetry_jsonl_path:

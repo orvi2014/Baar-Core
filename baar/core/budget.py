@@ -268,6 +268,19 @@ class BudgetTracker:
             )
             return self._UNKNOWN_MODEL_FALLBACK_COST
 
+    def input_price_per_token(self, model: str, prompt_tokens: int = 1) -> Optional[float]:
+        """
+        USD price of one prompt token for ``model`` at a prompt of ``prompt_tokens``
+        (rates can rise with prompt length), or None if LiteLLM has no pricing.
+        """
+        n = max(1, int(prompt_tokens))
+        try:
+            in_cost, _ = cost_per_token(model=model, prompt_tokens=n, completion_tokens=0)
+            price = float(in_cost) / n
+        except Exception:
+            return None
+        return price if math.isfinite(price) and price > 0 else None
+
     def output_price_per_token(self, model: str, prompt_tokens: int = 0) -> Optional[float]:
         """
         USD price of one completion token for ``model``, or None if LiteLLM has no pricing.
