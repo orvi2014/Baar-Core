@@ -26,7 +26,9 @@ from baar.early_stop import EarlyStopPolicy, RunState, RunStopped
 from baar.runlog import RunLogWriter, RunOutcome, new_run_id
 from baar.core.awareness import BudgetStatus, WindDown, add_note, DEFAULT_WRAP_UP
 from baar.core.cache import cached_tokens
-from baar.core.budget import BudgetTracker, BudgetExceeded, BudgetWindow, Alert
+from baar.core.budget import (
+    BudgetTracker, BudgetExceeded, BudgetWindow, Alert, Reservation, DEFAULT_LEASE_TTL,
+)
 from baar.core.exceptions import TaskRejected, BudgetExhausted, PolicyViolation
 from baar.core.models import StepResult, RoutingLog
 from baar.core.policy import Policy, PolicyAction
@@ -158,6 +160,19 @@ def _check_litellm_version() -> None:
 
 
 # ── Retry helpers ──────────────────────────────────────────────────────────────
+
+def _lease_ttl(lease_ttl: Optional[float], call_timeout: Optional[float]) -> float:
+    """
+    How long a reservation outlives a worker that died mid-call. It must be
+    longer than a call can take (three attempts plus backoff), or a slow call
+    could lose its reservation to another worker.
+    """
+    if lease_ttl is not None:
+        return float(lease_ttl)
+    if call_timeout is not None:
+        return float(call_timeout) * 3 + 60.0
+    return DEFAULT_LEASE_TTL
+
 
 def _sync_completion_with_retry(
     model: str,
@@ -318,6 +333,7 @@ class BAARConfig:
     max_log_steps: Optional[int] = None
     domain_model_overrides: Optional[dict] = None  # {"code": "gpt-4o"} etc.
     call_timeout: Optional[float] = None
+    lease_ttl: Optional[float] = None  # seconds a reservation outlives a dead worker
     routing_timeout: Optional[float] = None
     max_consecutive_errors: int = 1
     arun_concurrency: int = 1
@@ -413,6 +429,7 @@ class BAARRouter:
         max_log_steps: Optional[int] = None,
         domain_model_overrides: Optional[dict] = None,
         call_timeout: Optional[float] = None,
+        lease_ttl: Optional[float] = None,
         routing_timeout: Optional[float] = None,
         max_consecutive_errors: int = 1,
         arun_concurrency: int = 1,
@@ -465,6 +482,7 @@ class BAARRouter:
             max_log_steps=max_log_steps,
             domain_model_overrides=domain_model_overrides,
             call_timeout=call_timeout,
+            lease_ttl=lease_ttl,
             routing_timeout=routing_timeout,
             max_consecutive_errors=max_consecutive_errors,
             arun_concurrency=arun_concurrency,
@@ -598,6 +616,7 @@ class BAARRouter:
             store=config.store,
             window=config.window,
             alerts=config.alerts,
+            lease_ttl=_lease_ttl(config.lease_ttl, config.call_timeout),
         )
         self._router = Router(
             small_model=config.small_model,
@@ -908,7 +927,7 @@ class BAARRouter:
         plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
         reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
         with self._sync_budget_lock:
-            self._reserve(reserved)
+            reserved = self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1135,7 +1154,7 @@ class BAARRouter:
         plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
         reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
         with self._sync_budget_lock:
-            self._reserve(reserved)
+            reserved = self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1196,6 +1215,7 @@ class BAARRouter:
                 )
             prompt_tokens_for_record = tc(model_to_use_final)
             for chunk in response_stream:
+                self._tracker.renew_reservation(reserved)  # keep the lease alive while streaming
                 usage = _reported_usage(chunk) or usage
                 if not chunk.choices:
                     continue  # usage-only final chunk (OpenAI include_usage)
@@ -1470,7 +1490,7 @@ class BAARRouter:
         async with self._budget_async_lock:
             plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
             reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
-            self._reserve(reserved)
+            reserved = self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1700,7 +1720,7 @@ class BAARRouter:
         async with self._budget_async_lock:
             plan = self._plan_output(model_to_use, tc(model_to_use), eot, mode, limit, thinking)
             reserved = self._tracker.estimate_cost(model_to_use, plan.prompt_tokens, plan.completion_tokens)
-            self._reserve(reserved)
+            reserved = self._reserve(reserved)
         with self._step_counter_lock:
             self._step_counter += 1
             step_num = self._step_counter
@@ -1765,6 +1785,7 @@ class BAARRouter:
                 )
             prompt_tokens_for_record = tc(model_to_use_final)
             async for chunk in response_stream:
+                self._tracker.renew_reservation(reserved)  # keep the lease alive while streaming
                 usage = _reported_usage(chunk) or usage
                 if not chunk.choices:
                     continue  # usage-only final chunk (OpenAI include_usage)
@@ -2323,10 +2344,10 @@ class BAARRouter:
         _validate_thinking_budget(thinking)
         return mode, limit, thinking
 
-    def _reserve(self, amount: float) -> None:
+    def _reserve(self, amount: float) -> Reservation:
         """Reserve ``amount``; losing it to a concurrent call is a kill-switch refusal like any other."""
         try:
-            self._tracker.check_and_reserve(amount)
+            return self._tracker.check_and_reserve(amount)
         except BudgetExceeded as e:
             raise BudgetExhausted(
                 "Kill-switch activated: a concurrent call reserved the remaining budget first "
@@ -2481,22 +2502,25 @@ class BAARRouter:
         )
 
     def _cover_fallback(
-        self, candidate: str, tc, eot: int, mode: str, limit: Optional[int], thinking: Optional[int], reserved: float
+        self, candidate: str, tc, eot: int, mode: str, limit: Optional[int], thinking: Optional[int],
+        reserved: Reservation,
     ) -> tuple:
         """
         Plan a fallback candidate and top up the reservation if it costs more
-        than what is already held. Returns (plan, new_reserved).
+        than what is already held. Returns (plan, reserved).
         Raises BudgetExceeded if the extra amount can't be reserved.
         """
         # Our own reservation is already counted as spent, so it is available to this call.
         plan = self._plan_output(
             candidate, tc(candidate), eot, mode, limit, thinking,
-            remaining=self._tracker.remaining + reserved,
+            remaining=self._tracker.remaining + reserved.amount,
         )
         needed = self._tracker.estimate_cost(candidate, plan.prompt_tokens, plan.completion_tokens)
-        if needed > reserved:
-            self._tracker.check_and_reserve(needed - reserved)
-            reserved = needed
+        if needed > reserved.amount:
+            self._tracker.extend_reservation(reserved, needed - reserved.amount)
+        else:
+            # Earlier candidates may have used up much of the lease's time.
+            self._tracker.renew_reservation(reserved, force=True)
         return plan, reserved
 
     def _execution_model_candidates(self, tier: ModelTier, chosen_model: str) -> List[str]:

@@ -27,6 +27,8 @@ import json
 import os
 import sqlite3
 import threading
+import time
+import uuid
 import weakref
 from typing import Optional
 
@@ -74,6 +76,39 @@ class BudgetStore:
         sharing the same store can both pass affordability checks.
         """
         raise NotImplementedError  # pragma: no cover
+
+    # ── Leases ────────────────────────────────────────────────────────────────
+    #
+    # A lease is a reservation that expires. Stores that support leases count
+    # an unexpired lease as spent; once it expires (the worker holding it
+    # crashed or hung) the money is available again without anyone releasing
+    # it. Stores that do not override these methods fall back to the plain
+    # reserve/cancel behaviour below, where a reservation never expires.
+
+    #: True when reservations expire after their ttl.
+    supports_leases = False
+
+    def reserve_lease(self, total_budget: float, amount: float, ttl: float) -> Optional[str]:
+        """Reserve *amount* for *ttl* seconds if it fits; return a lease id, or None if it does not."""
+        if not self.atomic_check_and_reserve(total_budget, amount):
+            return None
+        return uuid.uuid4().hex
+
+    def extend_lease(self, lease_id: str, total_budget: float, extra: float, ttl: float) -> bool:
+        """Add *extra* to a lease (and restart its ttl) if it fits; False if it does not."""
+        return self.atomic_check_and_reserve(total_budget, extra)
+
+    def renew_lease(self, lease_id: str, ttl: float) -> bool:
+        """Restart a lease's ttl; False if it has already expired."""
+        return True
+
+    def release_lease(self, lease_id: str, amount: float) -> None:
+        """Drop a lease. *amount* is what it holds; stores without leases subtract it."""
+        self.add_spent(-amount)
+
+    def get_reserved(self) -> float:
+        """Total held by unexpired leases (0.0 for stores without leases)."""
+        return 0.0
 
 
 # ── In-memory (default, backward-compatible) ──────────────────────────────────
@@ -219,7 +254,12 @@ class SQLiteBudgetStore(BudgetStore):
     SQLite-backed budget store.  Thread-safe, no extra dependencies.
 
     Recommended for SaaS applications that need per-user budget enforcement
-    that persists across process restarts and survives crashes.
+    that persists across process restarts and survives crashes. Safe across
+    processes on one machine (gunicorn/uvicorn workers); for several machines
+    use ``RedisBudgetStore`` or ``PostgresBudgetStore``.
+
+    Reservations are leases: if a worker dies mid-call, its reservation
+    expires after its ttl instead of holding the budget forever.
 
     Args:
         db_path:   Path to the SQLite database file (created if absent).
@@ -241,6 +281,8 @@ class SQLiteBudgetStore(BudgetStore):
             namespace=f"tenant:{tenant_id}:2026-05",
         )
     """
+
+    supports_leases = True
 
     def __init__(self, db_path: str, namespace: str = "default") -> None:
         self._db_path = os.path.expanduser(db_path)
@@ -267,6 +309,17 @@ class SQLiteBudgetStore(BudgetStore):
                         updated   TEXT    NOT NULL DEFAULT (datetime('now'))
                     )
                 """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS budget_leases (
+                        id        TEXT PRIMARY KEY,
+                        namespace TEXT NOT NULL,
+                        amount    REAL NOT NULL,
+                        expires   REAL NOT NULL
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS budget_leases_ns ON budget_leases (namespace)"
+                )
 
     def _get(self, conn: sqlite3.Connection) -> float:
         row = conn.execute(
@@ -274,6 +327,13 @@ class SQLiteBudgetStore(BudgetStore):
             (self._namespace,),
         ).fetchone()
         return float(row[0]) if row else 0.0
+
+    def _held(self, conn: sqlite3.Connection, now: float) -> float:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM budget_leases WHERE namespace = ? AND expires > ?",
+            (self._namespace, now),
+        ).fetchone()
+        return float(row[0])
 
     def _upsert(self, conn: sqlite3.Connection, value: float) -> None:
         conn.execute("""
@@ -284,12 +344,47 @@ class SQLiteBudgetStore(BudgetStore):
                 updated = excluded.updated
         """, (self._namespace, value))
 
+    def _exclusive(self, fn):
+        """Run fn(conn, now) in a BEGIN EXCLUSIVE transaction; commit unless it returns False."""
+        with self._lock:
+            # BEGIN EXCLUSIVE acquires an OS-level write lock on the database file,
+            # blocking all other connections (in any process) until this transaction
+            # ends. This makes check-and-reserve atomic across gunicorn/uvicorn
+            # workers sharing the same DB file.
+            conn = sqlite3.connect(
+                self._db_path, check_same_thread=False, timeout=10, isolation_level=None
+            )
+            try:
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("BEGIN EXCLUSIVE")
+                now = time.time()
+                conn.execute(
+                    "DELETE FROM budget_leases WHERE namespace = ? AND expires <= ?",
+                    (self._namespace, now),
+                )
+                result = fn(conn, now)
+                conn.execute("ROLLBACK" if result is False else "COMMIT")
+                return result
+            except BaseException:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+            finally:
+                conn.close()
+
     # ── public interface ───────────────────────────────────────────────────────
 
     def get_spent(self) -> float:
         with self._lock:
             with self._connect() as conn:
-                return self._get(conn)
+                return self._get(conn) + self._held(conn, time.time())
+
+    def get_reserved(self) -> float:
+        with self._lock:
+            with self._connect() as conn:
+                return self._held(conn, time.time())
 
     def add_spent(self, amount: float) -> float:
         with self._lock:
@@ -304,42 +399,82 @@ class SQLiteBudgetStore(BudgetStore):
                         spent   = budget_spend.spent + excluded.spent,
                         updated = excluded.updated
                 """, (self._namespace, amount))
-                return self._get(conn)
+                return self._get(conn) + self._held(conn, time.time())
 
     def set_spent(self, value: float) -> None:
+        """Overwrite the spend; drops this namespace's leases so get_spent() == value."""
         with self._lock:
             with self._connect() as conn:
+                conn.execute("DELETE FROM budget_leases WHERE namespace = ?", (self._namespace,))
                 self._upsert(conn, float(value))
 
     def reset(self) -> None:
-        with self._lock:
-            with self._connect() as conn:
-                self._upsert(conn, 0.0)
+        self.set_spent(0.0)
 
     def atomic_check_and_reserve(self, total_budget: float, amount: float) -> bool:
-        with self._lock:
-            # BEGIN EXCLUSIVE acquires an OS-level write lock on the database file,
-            # blocking all other connections (in any process) from reading or writing
-            # until this transaction commits. This makes the check-and-reserve
-            # atomic across gunicorn/uvicorn workers sharing the same DB file.
-            conn = sqlite3.connect(
-                self._db_path, check_same_thread=False, timeout=10, isolation_level=None
-            )
-            try:
-                conn.execute("PRAGMA synchronous=NORMAL")
-                conn.execute("BEGIN EXCLUSIVE")
-                current = self._get(conn)
-                if current + amount <= total_budget:
-                    self._upsert(conn, current + amount)
-                    conn.execute("COMMIT")
-                    return True
-                conn.execute("ROLLBACK")
+        def op(conn, now):
+            current = self._get(conn)
+            if current + self._held(conn, now) + amount <= total_budget:
+                self._upsert(conn, current + amount)
+                return True
+            return False
+        return self._exclusive(op)
+
+    def reserve_lease(self, total_budget: float, amount: float, ttl: float) -> Optional[str]:
+        lease_id = uuid.uuid4().hex
+
+        def op(conn, now):
+            if self._get(conn) + self._held(conn, now) + amount > total_budget:
                 return False
-            except BaseException:
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass
-                raise
-            finally:
-                conn.close()
+            conn.execute(
+                "INSERT INTO budget_leases (id, namespace, amount, expires) VALUES (?, ?, ?, ?)",
+                (lease_id, self._namespace, float(amount), now + float(ttl)),
+            )
+            return True
+        return lease_id if self._exclusive(op) else None
+
+    def extend_lease(self, lease_id: str, total_budget: float, extra: float, ttl: float) -> bool:
+        def op(conn, now):
+            row = conn.execute(
+                "SELECT 1 FROM budget_leases WHERE id = ? AND namespace = ?",
+                (lease_id, self._namespace),
+            ).fetchone()
+            if row is None:  # expired: whoever extends must reserve the whole amount again
+                return False
+            if self._get(conn) + self._held(conn, now) + extra > total_budget:
+                return False
+            conn.execute(
+                "UPDATE budget_leases SET amount = amount + ?, expires = ? WHERE id = ?",
+                (float(extra), now + float(ttl), lease_id),
+            )
+            return True
+        return bool(self._exclusive(op))
+
+    def renew_lease(self, lease_id: str, ttl: float) -> bool:
+        def op(conn, now):
+            cur = conn.execute(
+                "UPDATE budget_leases SET expires = ? WHERE id = ? AND namespace = ?",
+                (now + float(ttl), lease_id, self._namespace),
+            )
+            return cur.rowcount > 0
+        return bool(self._exclusive(op))
+
+    def release_lease(self, lease_id: str, amount: float) -> None:
+        with self._lock:
+            with self._connect() as conn:
+                conn.execute(
+                    "DELETE FROM budget_leases WHERE id = ? AND namespace = ?",
+                    (lease_id, self._namespace),
+                )
+
+
+# ── Stores for many machines (optional dependencies, imported on first use) ──
+
+def __getattr__(name: str):
+    if name == "RedisBudgetStore":
+        from baar.core.redis_store import RedisBudgetStore
+        return RedisBudgetStore
+    if name == "PostgresBudgetStore":
+        from baar.core.postgres_store import PostgresBudgetStore
+        return PostgresBudgetStore
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

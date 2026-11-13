@@ -428,7 +428,7 @@ alice.chat("Summarise this document")  # deducted from Alice's $0.10 only
 bob.chat("Translate to French")        # Bob's quota untouched
 ```
 
-Namespace isolation is enforced at the store level — one user exhausting their quota cannot affect another's. Concurrent writes across threads **and across OS processes** (gunicorn/uvicorn workers) are safe: `SQLiteBudgetStore` uses WAL mode and an exclusive transaction for the check-and-reserve step, eliminating the TOCTOU race that affects most multi-tenant budget implementations.
+Namespace isolation is enforced at the store level — one user exhausting their quota cannot affect another's. Concurrent writes across threads **and across OS processes** (gunicorn/uvicorn workers) are safe: `SQLiteBudgetStore` uses WAL mode and an exclusive transaction for the check-and-reserve step, eliminating the TOCTOU race that affects most multi-tenant budget implementations. For workers on several machines, see [Running on many workers](#running-on-many-workers-redis-or-postgresql).
 
 **SaaS pattern — return HTTP 402 when a user's quota is exhausted:**
 
@@ -463,6 +463,30 @@ from baar.core.stores import FileBudgetStore
 
 router = BAARRouter(budget=1.00, store=FileBudgetStore("my_budget.json"))
 ```
+
+### Running on many workers (Redis or PostgreSQL)
+
+When your agents run on several machines, every worker must draw on the same budget. Point them all at one Redis or PostgreSQL namespace:
+
+```python
+from baar import BAARRouter, RedisBudgetStore, PostgresBudgetStore
+
+# pip install "baar-core[redis]"
+store = RedisBudgetStore("redis://cache:6379/0", namespace=f"tenant:{tenant_id}")
+
+# or: pip install "baar-core[postgres]"
+store = PostgresBudgetStore("postgresql://app@db/app", namespace=f"tenant:{tenant_id}")
+
+router = BAARRouter(budget=5.00, store=store, call_timeout=60)
+```
+
+- **No double spending.** The check and the reservation happen in one step on the server (a Lua script in Redis, a row lock in PostgreSQL), so two workers can never both take the last dollar.
+- **A crashed worker does not lock the budget.** Before each call Baar reserves the call's worst-case cost as a *lease*. If the worker dies mid-call, the lease expires and the money is available again. Expiry is timed by the server's clock, so workers' clocks do not need to agree.
+- **How long a lease lasts.** By default it lasts `3 × call_timeout + 60` seconds (three attempts plus backoff), or 15 minutes without a `call_timeout`. Streaming calls renew it while chunks arrive. Set `lease_ttl=` to choose your own. A call that runs longer than its lease, such as a connection that hangs without timing out, can lose its reservation to another worker, so the budget can then be exceeded by that call's cost. Set a `call_timeout`.
+- `router.summary()["reserved"]` shows how much is currently held by calls in flight. `window=BudgetWindow.DAILY` and the other windows work with both stores.
+- `SQLiteBudgetStore` uses the same leases, for several processes on one machine.
+
+PostgreSQL tables (`baar_budget_spend`, `baar_budget_leases`) are created on first use. Pass a `psycopg_pool.ConnectionPool` instead of a URL when many threads share one store.
 
 
 ## Benchmarks
