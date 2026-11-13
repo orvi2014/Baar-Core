@@ -181,7 +181,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
         # (the unique UUID LangChain assigns per call) gives each call its own slot.
         self._pending_models: Dict[uuid.UUID, str] = {}
         # Reservation amounts per run_id — see _preflight for why this is needed.
-        self._pending_reservations: Dict[uuid.UUID, float] = {}
+        self._pending_reservations: Dict[uuid.UUID, Any] = {}  # Reservation per call
 
     # ── pre-flight ─────────────────────────────────────────────────────────────
 
@@ -202,7 +202,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
         # prevents that. The reservation is cancelled in on_llm_end / on_llm_error once
         # actual spend is recorded.
         try:
-            self._router._tracker.check_and_reserve(estimated)
+            reservation = self._router._tracker.check_and_reserve(estimated)
         except BudgetExceeded as exc:
             raise BudgetExhausted(
                 f"Baar kill-switch: budget too low for '{model}' "
@@ -210,7 +210,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
                 "No API call was made.",
                 remaining=exc.remaining,
             ) from exc
-        return estimated
+        return reservation
 
     def on_llm_start(
         self,
@@ -254,7 +254,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         model = self._pending_models.pop(run_id, "gpt-4o-mini")
-        reserved = self._pending_reservations.pop(run_id, 0.0)
+        reserved = self._pending_reservations.pop(run_id, None)
         llm_output = response.llm_output or {}
         usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens", 0))
@@ -262,7 +262,7 @@ class BaarCallbackHandler(BaseCallbackHandler):
         if prompt_tokens or completion_tokens:
             # Cancel the preflight reservation before recording actual spend so the
             # store reflects real cost rather than estimate + actual (double-counting).
-            if reserved:
+            if reserved is not None:
                 self._router._tracker.cancel_reservation(reserved)
             self._router._tracker.record_manual(
                 model=model,
@@ -273,6 +273,8 @@ class BaarCallbackHandler(BaseCallbackHandler):
             # Provider did not report token usage. Retaining the preflight reservation
             # as spend prevents silent budget inflation — better to over-count by
             # estimate than to charge $0 for a call that actually cost something.
+            if reserved is not None:
+                self._router._tracker.settle_reservation(reserved)
             warnings.warn(
                 f"BaarCallbackHandler: '{model}' completed with no token usage in "
                 "llm_output. Preflight cost estimate retained as spend. "
@@ -292,8 +294,8 @@ class BaarCallbackHandler(BaseCallbackHandler):
         # Clean up both slots and release the budget reservation so no cost is
         # charged when the LLM call itself failed.
         self._pending_models.pop(run_id, None)
-        reserved = self._pending_reservations.pop(run_id, 0.0)
-        if reserved:
+        reserved = self._pending_reservations.pop(run_id, None)
+        if reserved is not None:
             self._router._tracker.cancel_reservation(reserved)
 
 

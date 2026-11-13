@@ -5,6 +5,7 @@ This is the financial source of truth for the entire system.
 
 import math
 import threading
+import time
 import warnings
 from collections import deque
 from dataclasses import dataclass, field
@@ -74,6 +75,7 @@ class WindowedBudgetStore(BudgetStore):
         self._current_key: Optional[str] = None
         self._current_store: BudgetStore = store
         self._lock = threading.Lock()
+        self._lease_stores: dict = {}
 
     def _period_key(self) -> str:
         now = datetime.now(timezone.utc)
@@ -94,6 +96,9 @@ class WindowedBudgetStore(BudgetStore):
 
     def _make_store(self, key: str) -> BudgetStore:
         base = self._base_store
+        for_namespace = getattr(base, "for_namespace", None)
+        if callable(for_namespace):  # RedisBudgetStore, PostgresBudgetStore
+            return for_namespace(f"{base._namespace}:{key}")
         if isinstance(base, SQLiteBudgetStore):
             return SQLiteBudgetStore(base._db_path, namespace=f"{base._namespace}:{key}")
         if isinstance(base, FileBudgetStore):
@@ -102,8 +107,8 @@ class WindowedBudgetStore(BudgetStore):
             return MemoryBudgetStore()
         raise TypeError(
             f"WindowedBudgetStore does not know how to create a period store for "
-            f"{type(base).__name__}. Use SQLiteBudgetStore, FileBudgetStore, or "
-            "MemoryBudgetStore, or subclass WindowedBudgetStore and override _make_store."
+            f"{type(base).__name__}. Use a built-in store, give the store a "
+            "for_namespace(name) method, or subclass WindowedBudgetStore and override _make_store."
         )
 
     def get_spent(self) -> float:
@@ -120,6 +125,38 @@ class WindowedBudgetStore(BudgetStore):
 
     def atomic_check_and_reserve(self, total_budget: float, amount: float) -> bool:
         return self._get_store().atomic_check_and_reserve(total_budget, amount)
+
+    # A lease lives in the period store it was taken in, even after the window rolls over.
+
+    @property
+    def supports_leases(self) -> bool:  # type: ignore[override]
+        return self._base_store.supports_leases
+
+    def reserve_lease(self, total_budget: float, amount: float, ttl: float) -> Optional[str]:
+        store = self._get_store()
+        lease_id = store.reserve_lease(total_budget, amount, ttl)
+        if lease_id is not None:
+            with self._lock:
+                self._lease_stores[lease_id] = store
+        return lease_id
+
+    def _lease_store(self, lease_id: str) -> BudgetStore:
+        with self._lock:
+            return self._lease_stores.get(lease_id) or self._current_store
+
+    def extend_lease(self, lease_id: str, total_budget: float, extra: float, ttl: float) -> bool:
+        return self._lease_store(lease_id).extend_lease(lease_id, total_budget, extra, ttl)
+
+    def renew_lease(self, lease_id: str, ttl: float) -> bool:
+        return self._lease_store(lease_id).renew_lease(lease_id, ttl)
+
+    def release_lease(self, lease_id: str, amount: float) -> None:
+        with self._lock:
+            store = self._lease_stores.pop(lease_id, None) or self._current_store
+        store.release_lease(lease_id, amount)
+
+    def get_reserved(self) -> float:
+        return self._get_store().get_reserved()
 
 
 # Reservation/cancellation methods allow achat() to atomically claim budget
@@ -150,6 +187,24 @@ class SpendRecord:
     cumulative_cost: float
 
 
+DEFAULT_LEASE_TTL = 900.0  # seconds; the router derives its own from call_timeout
+
+
+@dataclass
+class Reservation:
+    """
+    Money held for one call. With a store that supports leases it expires
+    ``ttl`` seconds after it was taken or last renewed, so a worker that dies
+    mid-call cannot hold the budget forever.
+    """
+
+    amount: float
+    lease_id: str
+    ttl: float
+    renewed_at: float = field(default_factory=time.monotonic)
+    released: bool = False
+
+
 class BudgetTracker:
     """
     Tracks real spend using LiteLLM's live pricing data.
@@ -169,8 +224,12 @@ class BudgetTracker:
         max_records: Optional[int] = None,
         window: Optional[BudgetWindow] = None,
         alerts: Optional[List[Alert]] = None,
+        lease_ttl: Optional[float] = None,
     ) -> None:
         self.total_budget = total_budget
+        if lease_ttl is not None and not (lease_ttl > 0):
+            raise ValueError("lease_ttl must be a positive number of seconds")
+        self.lease_ttl = float(lease_ttl) if lease_ttl is not None else DEFAULT_LEASE_TTL
         base_store: BudgetStore = store if store is not None else MemoryBudgetStore()
         self._store: BudgetStore = (
             WindowedBudgetStore(base_store, window) if window is not None else base_store
@@ -307,35 +366,103 @@ class BudgetTracker:
                 model=model,
             )
 
-    def check_and_reserve(self, amount: float) -> None:
+    def check_and_reserve(self, amount: float, ttl: Optional[float] = None) -> Reservation:
         """
-        Atomically check budget and reserve amount in one operation.
-        Raises BudgetExceeded if current_spent + amount > total_budget.
+        Atomically check the budget and hold ``amount`` in one operation.
+        Raises BudgetExceeded if spent + held + amount > total_budget.
         This fixes both the double-call and cross-instance TOCTOU race.
+
+        Returns a ``Reservation``; pass it to ``cancel_reservation()`` once the
+        actual cost is recorded or the call failed. If the process dies first,
+        a store with leases frees it after ``ttl`` seconds (default
+        ``lease_ttl``).
         """
-        ok = self._store.atomic_check_and_reserve(self.total_budget, amount)
-        if not ok:
+        ttl = float(ttl) if ttl is not None else self.lease_ttl
+        lease_id = self._store.reserve_lease(self.total_budget, amount, ttl)
+        if lease_id is None:
             raise BudgetExceeded(
                 requested=amount,
                 remaining=self.remaining,
                 model="(reservation)",
             )
+        return Reservation(amount=float(amount), lease_id=lease_id, ttl=ttl)
 
-    def reserve(self, amount: float) -> None:
+    def reserve(self, amount: float) -> Reservation:
         """
         Pre-deduct estimated cost so concurrent async calls cannot both pass
         the affordability check and together overshoot the budget (TOCTOU fix).
         Must be paired with a call to cancel_reservation() after recording actual cost.
-        Prefer check_and_reserve() for new code — it is atomic across processes.
         """
-        self.check_and_reserve(amount)
+        return self.check_and_reserve(amount)
 
-    def cancel_reservation(self, amount: float) -> None:
+    def extend_reservation(self, reservation: Reservation, extra: float) -> None:
         """
-        Reverse a prior reserve() call.  Called after record() has added the
-        actual cost, or when the LLM call failed and no cost was incurred.
+        Hold ``extra`` more under the same reservation (a fallback model that
+        costs more). Raises BudgetExceeded if it does not fit. If the lease had
+        already expired, the whole amount is reserved again under a new lease.
         """
-        self._store.add_spent(-amount)
+        if extra <= 0:
+            return
+        if self._store.extend_lease(reservation.lease_id, self.total_budget, extra, reservation.ttl):
+            reservation.amount += extra
+            reservation.renewed_at = time.monotonic()
+            return
+        total = reservation.amount + extra
+        new_id = None
+        expired = self._store.supports_leases and not self._store.renew_lease(
+            reservation.lease_id, reservation.ttl)
+        if expired:
+            new_id = self._store.reserve_lease(self.total_budget, total, reservation.ttl)
+        if new_id is None:
+            raise BudgetExceeded(requested=extra, remaining=self.remaining, model="(reservation)")
+        reservation.lease_id = new_id
+        reservation.amount = total
+        reservation.renewed_at = time.monotonic()
+
+    def renew_reservation(self, reservation: Reservation, force: bool = False) -> None:
+        """
+        Keep a reservation alive during a long call (streaming). Cheap to call
+        often: it only reaches the store once a third of the ttl has passed.
+        If the lease had expired, it is taken again when the budget allows.
+        """
+        if not self._store.supports_leases or reservation.released:
+            return
+        now = time.monotonic()
+        if not force and now - reservation.renewed_at < reservation.ttl / 3:
+            return
+        reservation.renewed_at = now
+        if not self._store.renew_lease(reservation.lease_id, reservation.ttl):
+            new_id = self._store.reserve_lease(self.total_budget, reservation.amount, reservation.ttl)
+            if new_id is not None:
+                reservation.lease_id = new_id
+
+    def cancel_reservation(self, reservation: Union[Reservation, float]) -> None:
+        """
+        Release a reservation. Called after record() has added the actual
+        cost, or when the LLM call failed and no cost was incurred. A plain
+        float is the pre-0.14 form: that amount is subtracted from the spend.
+        """
+        if isinstance(reservation, Reservation):
+            if reservation.released:
+                return
+            reservation.released = True
+            self._store.release_lease(reservation.lease_id, reservation.amount)
+        else:
+            self._store.add_spent(-float(reservation))
+
+    def settle_reservation(self, reservation: Union[Reservation, float]) -> None:
+        """Turn a reservation into spend (the call's real cost is unknown, so charge what was held)."""
+        if isinstance(reservation, Reservation):
+            if reservation.released:
+                return
+            self._store.add_spent(reservation.amount)
+            self.cancel_reservation(reservation)
+        # A float reservation is already counted as spend.
+
+    @property
+    def reserved(self) -> float:
+        """Money currently held by unexpired reservations (stores with leases)."""
+        return self._store.get_reserved()
 
     def reset(self) -> None:
         """Reset spend to 0.0 and re-arm all once=True alerts."""
@@ -445,6 +572,7 @@ class BudgetTracker:
         return {
             "total_budget": self.total_budget,
             "spent": round(spent, 8),
+            "reserved": round(self._store.get_reserved(), 8),
             "remaining": round(max(0.0, self.total_budget - spent), 8),
             "utilization_pct": round(min(1.0, spent / self.total_budget) * 100, 2) if self.total_budget > 0 else 0,
             "steps": self._step,

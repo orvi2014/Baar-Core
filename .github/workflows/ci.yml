@@ -17,6 +17,21 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    # Real servers for the Redis/PostgreSQL budget store tests (tests/test_distributed_store.py).
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: baar
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      BAAR_TEST_REDIS_URL: redis://localhost:6379/0
+      BAAR_TEST_POSTGRES_URL: postgresql://postgres:baar@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 

@@ -2,6 +2,33 @@
 
 All notable changes to baar-core are documented here.
 
+## [0.14.0] — 2026-11-13
+
+### Added
+- **`RedisBudgetStore` and `PostgresBudgetStore`**: one budget shared by workers on many
+  machines (`pip install "baar-core[redis]"` / `"baar-core[postgres]"`). Check-and-reserve is
+  atomic on the server (a Lua script in Redis; a `SELECT ... FOR UPDATE` row lock in PostgreSQL).
+  Both work with `window=BudgetWindow.*`.
+- **Reservations are leases.** A call's reservation now expires `lease_ttl` seconds after it was
+  taken or last renewed (default `3 × call_timeout + 60`, or 15 minutes), so a worker that dies
+  mid-call no longer holds the budget forever. Expiry uses the server's clock. Streaming calls
+  renew the lease while chunks arrive; a fallback model that costs more extends it.
+  `SQLiteBudgetStore` uses leases too. New `BAARRouter(lease_ttl=...)`.
+- `BudgetTracker.check_and_reserve()` returns a `Reservation`; new `extend_reservation`,
+  `renew_reservation`, `settle_reservation` and the `reserved` property. `summary()` has a
+  `reserved` field.
+- `BudgetStore` has lease methods (`reserve_lease`, `extend_lease`, `renew_lease`,
+  `release_lease`, `get_reserved`) with defaults built on the old methods, so custom stores keep
+  working unchanged (their reservations simply do not expire). A store with a
+  `for_namespace(name)` method works with budget windows.
+
+### Changed
+- `set_spent()` and `reset()` on the SQLite, Redis and PostgreSQL stores also drop the
+  namespace's leases.
+- The LangChain callback handler keeps its preflight reservation as spend through
+  `settle_reservation` when the provider reports no usage (before, the amount simply stayed
+  added to the spend).
+
 ## [0.13.0] — 2026-11-13
 
 ### Added
